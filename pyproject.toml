@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-local"
+version = "0.1.0"
+description = "Asistente personal local y seguro para Windows"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { text = "MIT" }
+authors = [{ name = "JarvisLocal" }]
+dependencies = [
+  "httpx>=0.28.1,<1",
+  "pypdf>=6.19.0,<7",
+  "pydantic>=2.13.4,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.1.1,<10",
+]
+
+[project.scripts]
+jarvis-local = "jarvis_local.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

@@ -1,0 +1,3 @@
+La entrega del prototipo lunar está fijada para el 18 de noviembre. Antes de esa
+fecha deben completarse las pruebas de recuperación y las referencias a fuentes.
+

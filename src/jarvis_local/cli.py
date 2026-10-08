@@ -1,0 +1,592 @@
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+from .budgets import ActionBudget
+from .cancellation import CancellationController
+from .config import Settings
+from .database import Database
+from .execution import ActionExecutor
+from .logging_json import configure_logging
+from .memory import DecisionSource, EpisodicKind, MemoryRepository
+from .model_providers import ModelProvider, ModelProviderError, create_model_provider
+from .models import (
+    ActionRequest,
+    ConfirmationReceipt,
+    ConfirmationSource,
+    PolicyDecision,
+)
+from .orchestrator import Orchestrator
+from .policy import PolicyEngine
+from .projects import ProjectService
+from .rag import (
+    EmbeddingProvider,
+    EmbeddingProviderError,
+    ProjectIndexer,
+    RagRepository,
+    RagService,
+    create_embedding_provider,
+)
+from .tools import build_default_registry
+
+
+def default_config_path() -> Path:
+    return Path(__file__).resolve().parents[2] / "config" / "jarvis.toml"
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Asistente personal local para Windows")
+    parser.add_argument("--config", type=Path, default=default_config_path())
+    parser.add_argument("--model", help="Sobrescribe temporalmente el modelo configurado")
+    parser.add_argument("--once", help="Ejecuta una sola instrucción y termina")
+    parser.add_argument("--doctor", action="store_true", help="Comprueba seguridad, datos y modelo local")
+    parser.add_argument(
+        "--start-model-server",
+        action="store_true",
+        help="Permite iniciar llama-server aunque auto_start esté deshabilitado",
+    )
+    parser.add_argument("--verify-audit", action="store_true", help="Verifica la cadena hash de auditoría")
+    parser.add_argument("--list-projects", action="store_true", help="Lista proyectos registrados")
+    parser.add_argument("--register-project", metavar="NAME", help="Registra un proyecto autorizado")
+    parser.add_argument("--project-path", type=Path, help="Ruta usada por --register-project")
+    parser.add_argument("--activate-project", metavar="PROJECT_ID", help="Activa un proyecto registrado")
+    parser.add_argument(
+        "--set-project-permission",
+        metavar="PERMISSION=BOOL",
+        help="Edita un permiso del proyecto activo desde esta CLI local",
+    )
+    parser.add_argument("--index-project", action="store_true", help="Indexa incrementalmente el proyecto activo")
+    parser.add_argument("--rag-query", help="Consulta el índice del proyecto activo")
+    parser.add_argument(
+        "--rag-mode", choices=("hybrid", "lexical", "semantic"), default="hybrid"
+    )
+    parser.add_argument("--record-decision", help="Registra una decisión explícitamente confirmada")
+    parser.add_argument("--decision-topic", help="Tema estable usado por --record-decision")
+    parser.add_argument("--decision-reason", help="Motivo del cambio usado por --record-decision")
+    parser.add_argument("--decision-history", metavar="TOPIC", help="Consulta la cadena temporal de una decisión")
+    parser.add_argument("--forget-decision", metavar="TOPIC", help="Olvida toda la cadena de un tema confirmado")
+    parser.add_argument("--record-pending", help="Registra un pendiente explícitamente confirmado")
+    parser.add_argument(
+        "--record-session-summary",
+        help="Registra un resumen de sesión suministrado explícitamente",
+    )
+    parser.add_argument("--profile-set", metavar="KEY=VALUE", help="Crea o edita una preferencia explícita")
+    parser.add_argument("--profile-delete", metavar="KEY", help="Elimina una preferencia")
+    parser.add_argument("--profile-list", action="store_true", help="Muestra preferencias explícitas")
+    parser.add_argument("--simulate-tool", help="Evalúa una herramienta sin producir efectos")
+    parser.add_argument("--arguments", default="{}", help="JSON de argumentos para --simulate-tool")
+    parser.add_argument(
+        "--expected-result",
+        default="La simulación valida la acción sin producir efectos.",
+        help="Resultado esperado para --simulate-tool",
+    )
+    return parser.parse_args(argv)
+
+
+def confirm_action(request: ActionRequest, decision: PolicyDecision) -> ConfirmationReceipt:
+    print("\nAcción que requiere confirmación local:")
+    print(f"  Herramienta: {request.tool}")
+    print(f"  Riesgo calculado: {int(decision.calculated_risk)}")
+    print(f"  Argumentos: {json.dumps(request.arguments, ensure_ascii=False)}")
+    print(f"  Resultado esperado: {request.expected_result}")
+    print(f"  Política: {' '.join(decision.reasons)}")
+    answer = input("Autorizar una vez [s/N]: ").strip().casefold()
+    approved = answer in {"s", "si", "sí", "y", "yes"}
+    return ConfirmationReceipt(
+        approved=approved,
+        source=ConfirmationSource.TRUSTED_LOCAL_UI,
+        request_id=request.request_id,
+        summary="Confirmación explícita desde la CLI local." if approved else "El usuario rechazó la acción.",
+    )
+
+
+async def run_doctor(
+    settings: Settings,
+    database: Database,
+    provider: ModelProvider,
+    embeddings: EmbeddingProvider,
+) -> int:
+    failures = 0
+    print(f"Python: {sys.version.split()[0]} (objetivo 3.12; compatible 3.12–3.13)")
+    print(f"Configuración: OK ({settings.project_dir})")
+    print(f"Base de datos: OK ({settings.database_path})")
+    print(f"Registros: {database.counts()}")
+
+    valid_chain, errors = database.verify_audit_chain()
+    print(f"Auditoría: {'OK' if valid_chain else 'ERROR'}")
+    if not valid_chain:
+        failures += 1
+        for error in errors:
+            print(f"  - {error}")
+
+    health = await provider.health()
+    print(f"Proveedor: {health.provider}")
+    print(f"Servidor: {'OK' if health.available else 'NO DISPONIBLE'}")
+    print(f"Modelo: {'OK' if health.ready else 'NO LISTO'} ({health.model})")
+    if health.version:
+        print(f"Versión del proveedor: {health.version}")
+    if health.detail:
+        print(f"Detalle: {health.detail}")
+    if not health.available or not health.ready:
+        failures += 1
+    if settings.model_provider == "llama_cpp":
+        executable_ok = bool(
+            settings.llama_server_executable and settings.llama_server_executable.is_file()
+        )
+        model_ok = bool(settings.llama_model_path and settings.llama_model_path.is_file())
+        print(f"llama-server: {'OK' if executable_ok else 'NO ENCONTRADO'}")
+        print(f"GGUF: {'OK' if model_ok else 'NO ENCONTRADO'}")
+        failures += int(not executable_ok) + int(not model_ok)
+
+    embedding_health = await embeddings.health()
+    print(f"Embeddings: {'OK' if embedding_health.ready else 'NO LISTO'} ({embedding_health.model})")
+    if embedding_health.detail:
+        print(f"Detalle embeddings: {embedding_health.detail}")
+    if not embedding_health.available or not embedding_health.ready:
+        failures += 1
+    embedding_model_ok = bool(
+        settings.embedding_model_path and settings.embedding_model_path.is_file()
+    )
+    print(f"GGUF embeddings: {'OK' if embedding_model_ok else 'NO ENCONTRADO'}")
+    failures += int(not embedding_model_ok)
+
+    print("Raíces autorizadas:")
+    for root in settings.allowed_roots:
+        exists = root.exists()
+        failures += int(not exists)
+        print(f"  - [{'OK' if exists else 'NO EXISTE'}] {root}")
+    print(f"Herramientas autorizadas: {', '.join(sorted(settings.allowed_tools))}")
+    print(f"Acciones privilegiadas: {'habilitadas' if settings.privileged_tools_enabled else 'deshabilitadas'}")
+    print(f"IA remota: {'habilitada' if settings.remote_ai_enabled else 'deshabilitada'}")
+    print(f"Automatización visual: {'habilitada' if settings.visual_automation_enabled else 'deshabilitada'}")
+    return 1 if failures else 0
+
+
+async def async_main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    settings = Settings.load(args.config)
+    if args.model:
+        settings = settings.model_copy(update={"model": args.model})
+
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    configure_logging(settings.data_dir / "logs", settings.log_level)
+    database = Database(settings.database_path)
+    policy = PolicyEngine(settings)
+    projects = ProjectService(database, policy)
+    project = projects.ensure_bootstrap_project("JarvisLocal", settings.project_dir)
+    memory = MemoryRepository(database)
+    controller = CancellationController()
+
+    if args.verify_audit:
+        valid, errors = database.verify_audit_chain()
+        print("Cadena de auditoría válida." if valid else "Cadena de auditoría inválida.")
+        for error in errors:
+            print(f"- {error}")
+        return 0 if valid else 1
+
+    if args.list_projects:
+        for item in projects.list():
+            marker = "*" if item.is_active else " "
+            print(
+                f"{marker} {item.id}  {item.status.value}  {item.name}  {item.root_path}  "
+                f"permissions={json.dumps(item.permissions, ensure_ascii=False, sort_keys=True)}"
+            )
+        return 0
+
+    if args.register_project:
+        if args.project_path is None:
+            print("--register-project requiere --project-path.", file=sys.stderr)
+            return 2
+        created = projects.create(args.register_project, args.project_path)
+        database.record_audit(
+            session_id=None,
+            project_id=created.id,
+            event_type="project_registered",
+            outcome="success",
+            detail={"name": created.name, "root_path": created.root_path},
+        )
+        print(json.dumps(created.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.activate_project:
+        project = projects.activate(args.activate_project)
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="project_activated",
+            outcome="success",
+        )
+        print(f"Proyecto activo: {project.name} ({project.root_path})")
+        return 0
+
+    if args.set_project_permission:
+        permission, separator, raw_enabled = args.set_project_permission.partition("=")
+        values = {"true": True, "1": True, "yes": True, "si": True, "sí": True,
+                  "false": False, "0": False, "no": False}
+        normalized_enabled = raw_enabled.strip().casefold()
+        if not separator or normalized_enabled not in values:
+            print(
+                "--set-project-permission requiere PERMISSION=true|false.",
+                file=sys.stderr,
+            )
+            return 2
+        project = projects.set_permission(
+            project.id, permission, values[normalized_enabled]
+        )
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="project_permission_changed",
+            outcome="success",
+            detail={
+                "permission": permission.strip().casefold(),
+                "enabled": values[normalized_enabled],
+                "source": "trusted_local_cli",
+            },
+        )
+        print(json.dumps(project.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.profile_list:
+        print(json.dumps([item.model_dump(mode="json") for item in memory.list_profile()], ensure_ascii=False, indent=2))
+        return 0
+
+    if args.profile_set:
+        key, separator, value = args.profile_set.partition("=")
+        if not separator or not key.strip():
+            print("--profile-set requiere KEY=VALUE.", file=sys.stderr)
+            return 2
+        entry = memory.set_profile(key, value, explicit=True)
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="profile_updated",
+            outcome="success",
+            detail={"key": entry.key, "source": entry.source},
+        )
+        print(json.dumps(entry.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return 0
+
+    if args.profile_delete:
+        removed = memory.delete_profile(args.profile_delete)
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="profile_deleted",
+            outcome="success" if removed else "not_found",
+            detail={"key": args.profile_delete.casefold()},
+        )
+        print("Preferencia eliminada." if removed else "Preferencia no encontrada.")
+        return 0 if removed else 1
+
+    if args.decision_history:
+        projects.require_permission(project, "memory")
+        state = memory.get_decision_state(
+            project_id=project.id, topic=args.decision_history
+        )
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="temporal_decision_read",
+            outcome="success" if state.current else "not_found",
+            detail={"topic": state.topic, "history_count": len(state.history)},
+        )
+        print(json.dumps(state.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return 0 if state.current else 1
+
+    if args.forget_decision:
+        projects.require_permission(project, "memory")
+        removed = memory.forget_decision_topic(
+            project_id=project.id, topic=args.forget_decision, explicit=True
+        )
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="temporal_decision_forgotten",
+            outcome="success" if removed else "not_found",
+            # No se registra el texto, motivo ni procedencia eliminados.
+            detail={"topic": args.forget_decision.strip(), "records_removed": removed},
+        )
+        print(f"Cadena eliminada ({removed} registro(s)).")
+        return 0 if removed else 1
+
+    if args.record_decision or args.record_pending or args.record_session_summary:
+        projects.require_permission(project, "memory")
+        if args.record_decision:
+            if not args.decision_topic or not args.decision_reason:
+                print(
+                    "--record-decision requiere --decision-topic y --decision-reason.",
+                    file=sys.stderr,
+                )
+                return 2
+            state = memory.set_decision(
+                project_id=project.id,
+                topic=args.decision_topic,
+                statement=args.record_decision,
+                rationale=args.decision_reason,
+                source=DecisionSource(
+                    kind="explicit_user", reference="trusted_local_cli"
+                ),
+                confirmed=True,
+            )
+            database.record_audit(
+                session_id=None,
+                project_id=project.id,
+                event_type="temporal_decision_changed",
+                outcome="success",
+                detail={
+                    "decision_id": state.current.id,
+                    "topic": state.topic,
+                    "supersedes_id": state.current.supersedes_id,
+                    "source_kind": state.current.source.kind,
+                },
+            )
+            print(json.dumps(state.model_dump(mode="json"), ensure_ascii=False, indent=2))
+            return 0
+        elif args.record_pending:
+            kind = EpisodicKind.PENDING_TASK
+            summary = args.record_pending
+        else:
+            kind = EpisodicKind.SESSION_SUMMARY
+            summary = args.record_session_summary
+        event = memory.add_episode(
+            project_id=project.id,
+            kind=kind,
+            summary=summary,
+            source="trusted_local_cli",
+            confirmed=True,
+        )
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="episodic_memory_added",
+            outcome="success",
+            detail={"event_id": event.id, "kind": event.kind.value, "confirmed": True},
+        )
+        print(json.dumps(event.model_dump(mode="json"), ensure_ascii=False, indent=2))
+        return 0
+
+    try:
+        embeddings = await create_embedding_provider(
+            settings,
+            allow_start=bool(args.doctor or args.index_project or args.rag_query),
+        )
+    except EmbeddingProviderError as exc:
+        print(f"Error de embeddings [{exc.code}]: {exc}", file=sys.stderr)
+        return 1
+
+    rag_repository = RagRepository(database)
+    rag_service = RagService(
+        settings=settings,
+        projects=projects,
+        repository=rag_repository,
+        embeddings=embeddings,
+    )
+    indexer = ProjectIndexer(
+        settings=settings,
+        database=database,
+        policy=policy,
+        projects=projects,
+        repository=rag_repository,
+        embeddings=embeddings,
+    )
+    registry = build_default_registry(
+        settings, policy, rag_service=rag_service, memory=memory, projects=projects
+    )
+    executor = ActionExecutor(
+        settings=settings,
+        database=database,
+        registry=registry,
+        policy=policy,
+        projects=projects,
+        memory=memory,
+    )
+
+    if args.doctor:
+        provider = await create_model_provider(
+            settings,
+            allow_start=args.start_model_server or settings.llama_auto_start,
+        )
+        try:
+            return await run_doctor(settings, database, provider, embeddings)
+        finally:
+            await provider.aclose()
+            await embeddings.aclose()
+
+    if args.index_project:
+        try:
+            stats = await indexer.index_project(project, controller.begin_turn())
+            print(json.dumps(stats.model_dump(mode="json"), ensure_ascii=False, indent=2))
+            return 0 if not stats.errors else 1
+        finally:
+            await embeddings.aclose()
+
+    if args.rag_query:
+        try:
+            result = await rag_service.search(
+                project=project,
+                query=args.rag_query,
+                mode=args.rag_mode,
+                cancellation=controller.begin_turn(),
+            )
+            payload = result.model_dump(mode="json")
+            for item, evidence in zip(payload["evidence"], result.evidence, strict=True):
+                item["citation"] = evidence.citation
+            database.record_audit(
+                session_id=None,
+                project_id=project.id,
+                event_type="rag_query",
+                outcome="success" if result.sufficient_evidence else "insufficient_evidence",
+                intent=args.rag_query,
+                detail={
+                    "mode": args.rag_mode,
+                    "citations": [item.citation for item in result.evidence],
+                    "source_hashes": [item.source_hash for item in result.evidence],
+                    "elapsed_seconds": result.elapsed_seconds,
+                },
+            )
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0 if result.sufficient_evidence else 1
+        finally:
+            await embeddings.aclose()
+
+    if args.simulate_tool:
+        try:
+            arguments = json.loads(args.arguments)
+            if not isinstance(arguments, dict):
+                raise ValueError("--arguments debe ser un objeto JSON.")
+        except (json.JSONDecodeError, ValueError) as exc:
+            print(f"Argumentos inválidos: {exc}", file=sys.stderr)
+            return 2
+        request = ActionRequest(
+            tool=args.simulate_tool,
+            arguments=arguments,
+            expected_result=args.expected_result,
+            intent="Simulación solicitada desde la CLI local.",
+            project_id=project.id,
+        )
+        result = await executor.execute(
+            request,
+            cancellation=controller.begin_turn(),
+            budget=ActionBudget(settings.budget_limits()),
+            confirmation_callback=confirm_action,
+            dry_run=True,
+        )
+        print(json.dumps(result.as_dict(), ensure_ascii=False, indent=2))
+        await embeddings.aclose()
+        return 0 if result.ok else 1
+
+    provider = await create_model_provider(
+        settings,
+        allow_start=args.start_model_server or settings.llama_auto_start,
+    )
+    orchestrator = Orchestrator(
+        settings=settings,
+        database=database,
+        provider=provider,
+        registry=registry,
+        executor=executor,
+        approval_callback=confirm_action,
+    )
+    session_id = database.create_session(project_id=project.id)
+
+    def write_delta(delta: str) -> None:
+        print(delta, end="", flush=True)
+
+    try:
+        if args.once:
+            try:
+                await orchestrator.chat(
+                    session_id,
+                    project,
+                    args.once,
+                    controller.begin_turn(),
+                    on_text_delta=write_delta,
+                )
+                print()
+                return 0
+            except ModelProviderError as exc:
+                print(f"\nError de modelo [{exc.code}]: {exc}", file=sys.stderr)
+                return 1
+
+        print(f"{settings.assistant_name} local — {provider.name} / {settings.model}")
+        print(f"Proyecto activo: {project.name} ({project.root_path})")
+        print("Comandos: :new, :status, :projects, :audit, :quit. Ctrl+C detiene la sesión.")
+        while True:
+            active_project = projects.active()
+            if active_project is not None and active_project.id != project.id:
+                project = active_project
+                session_id = database.create_session(project_id=project.id)
+                print(
+                    f"\nContexto cambiado al proyecto activo: {project.name} "
+                    f"({project.root_path}). Nueva conversación creada."
+                )
+            try:
+                text = input("\nTú> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                controller.cancel_current("Interrupción desde la consola.")
+                print("\nSesión terminada.")
+                return 0
+            if not text:
+                continue
+            command = text.casefold()
+            if command in {":quit", ":exit", "salir"}:
+                controller.cancel_current("Sesión terminada por el usuario.")
+                return 0
+            if command == ":new":
+                session_id = database.create_session(project_id=project.id)
+                print("Nueva conversación creada.")
+                continue
+            if command == ":status":
+                print(json.dumps(database.counts(), ensure_ascii=False, indent=2))
+                continue
+            if command == ":projects":
+                for item in projects.list():
+                    marker = "*" if item.is_active else " "
+                    print(f"{marker} {item.id}  {item.name}  {item.root_path}")
+                continue
+            if command == ":audit":
+                valid, errors = database.verify_audit_chain()
+                print("Cadena de auditoría válida." if valid else "Cadena inválida: " + "; ".join(errors))
+                continue
+            try:
+                print(f"\n{settings.assistant_name}> ", end="", flush=True)
+                await orchestrator.chat(
+                    session_id,
+                    project,
+                    text,
+                    controller.begin_turn(),
+                    on_text_delta=write_delta,
+                )
+                print()
+            except ModelProviderError as exc:
+                print(f"\nError de modelo [{exc.code}]: {exc}")
+            except KeyboardInterrupt:
+                controller.cancel_current("Interrupción desde la consola.")
+                print("\nTurno cancelado.")
+    finally:
+        await provider.aclose()
+        await embeddings.aclose()
+
+
+def main(argv: list[str] | None = None) -> int:
+    if os.name == "nt":
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8")
+    try:
+        return asyncio.run(async_main(argv))
+    except KeyboardInterrupt:
+        print("\nCancelado por el usuario.")
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
