@@ -20,9 +20,11 @@ tres restantes no pertenecen a este proyecto y se conservan sin modificaciones.
 | Preparar clonación | PowerShell + `Setup-VoiceClone.ps1` | red, ~3,21 GB, entorno aislado |
 | Preparar audio | PowerShell + `Setup-AudioModels.ps1` | red y espacio para modelos |
 
-Fuera de alcance y conservados: `Codex Admin YOLO.lnk`, `Codex Admin YOLO -
-Cuenta 2.lnk` y `MarkItDown - Convertir a Markdown.lnk`. Sus destinos existían y
-no mostraron conflicto con JarvisLocal.
+Inicialmente fuera de alcance: `Codex Admin YOLO.lnk`, `Codex Admin YOLO - Cuenta
+2.lnk` y `MarkItDown - Convertir a Markdown.lnk`. Una solicitud posterior exigió
+limpiar todo el ruido del Escritorio; esos tres enlaces se trasladaron al respaldo
+`backups/desktop-shortcuts/removed-desktop-noise-20261008-122147/`. Sus destinos,
+scripts, ejecutables y carpetas originales no se borraron ni modificaron.
 
 ## Arquitectura
 
@@ -88,6 +90,10 @@ ejecutables, configuraciones, modelos ni carpetas originales.
 Respaldo creado durante la consolidación validada:
 `backups/desktop-shortcuts/20261008-121213/` (nueve `.lnk` más
 `inventory.json`).
+
+Estado final del Escritorio: un solo acceso directo, `JarvisLocal.lnk`, más
+`LM.txt` con instrucciones de uso, voz, diagnóstico y rutas de las herramientas
+externas retiradas.
 
 ## Limitaciones
 

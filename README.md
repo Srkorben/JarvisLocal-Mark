@@ -78,8 +78,9 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
 
 ## Uso y verificación
 
-El Escritorio utiliza un único acceso `JarvisLocal.lnk`. El centro también puede
-iniciarse, consultarse o detenerse desde consola:
+El Escritorio utiliza un único acceso `JarvisLocal.lnk` y el archivo informativo
+`LM.txt`; no quedan otros `.lnk`. El centro también puede iniciarse, consultarse o
+detenerse desde consola:
 
 ```powershell
 .\.venv\Scripts\python.exe -m jarvis_local.control_center --launch

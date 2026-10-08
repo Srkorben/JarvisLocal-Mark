@@ -20,7 +20,9 @@ Incremento posterior a Fase 4: **evaluación de CORE y decisiones temporales,
 completado**. No constituye una fase nueva y no cambia la prioridad de voz PTT.
 
 Incremento de acceso: **centro de control web local completado**. Consolida nueve
-accesos JarvisLocal sin modificar los tres accesos ajenos detectados.
+accesos JarvisLocal. Por solicitud posterior del usuario, los tres `.lnk` ajenos
+también se retiraron del Escritorio tras respaldarlos; sus aplicaciones y archivos
+de origen permanecen intactos.
 
 ## Centro de control local
 

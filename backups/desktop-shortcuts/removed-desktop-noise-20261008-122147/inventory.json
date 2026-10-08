@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Codex Admin YOLO - Cuenta 2.lnk",
+    "original_path": "C:\\Users\\andcb\\Desktop\\Codex Admin YOLO - Cuenta 2.lnk",
+    "target": "C:\\Users\\andcb\\.claude\\codex-admin-yolo\\native\\CodexAdminYoloLauncher.exe",
+    "arguments": "--root \"C:\\Users\\andcb\\.claude\"",
+    "working_directory": "C:\\Users\\andcb\\.claude",
+    "description": "Codex Admin YOLO aislado para una segunda cuenta Plus",
+    "icon": "C:\\Users\\andcb\\.claude\\codex-admin-yolo\\assets\\codex-admin-yolo-warm.ico,0"
+  },
+  {
+    "name": "Codex Admin YOLO.lnk",
+    "original_path": "C:\\Users\\andcb\\Desktop\\Codex Admin YOLO.lnk",
+    "target": "C:\\Users\\andcb\\.claude\\codex-god-yolo\\native\\CodexAdminLauncher.exe",
+    "arguments": "--root \"C:\\Users\\andcb\\.claude\"",
+    "working_directory": "C:\\Users\\andcb\\.claude",
+    "description": "Abre Codex con UAC real, acceso completo y monitor de actividad verificable",
+    "icon": "C:\\Users\\andcb\\.claude\\codex-god-yolo\\assets\\codex-admin-live.ico,0"
+  },
+  {
+    "name": "MarkItDown - Convertir a Markdown.lnk",
+    "original_path": "C:\\Users\\andcb\\Desktop\\MarkItDown - Convertir a Markdown.lnk",
+    "target": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "arguments": "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"F:\\AI Local\\Apps\\MarkItDown-Convertidor\\Convertir-a-Markdown.ps1\"",
+    "working_directory": "F:\\AI Local\\Apps\\MarkItDown-Convertidor",
+    "description": "Convierte documentos a Markdown localmente desde F:",
+    "icon": "F:\\AI Local\\Icons\\Shortcuts\\MarkItDown.ico,0"
+  }
+]
