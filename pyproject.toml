@@ -17,6 +17,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+audio = [
+  "faster-whisper==1.2.1",
+  "piper-tts==1.8.0",
+  "sounddevice==0.5.6",
+]
 dev = [
   "pytest>=9.1.1,<10",
 ]

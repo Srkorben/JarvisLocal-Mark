@@ -48,11 +48,36 @@ archivos/proceso, DOM, UI Automation, OCR, VLM y finalmente coordenadas.
 | `model_providers` | contrato, adaptadores HTTP y ciclo de `llama-server` | inferencia sin autoridad |
 | `memory` | trabajo, episodios, decisiones temporales y perfil explícito | persistencia; no infiere autoridad |
 | `rag` | extracción, embeddings, FTS5, vectores y citas | recuperación filtrada por proyecto |
+| `audio` | WASAPI, PTT, STT/TTS sustituibles y máquina de estados | interfaz; sin autoridad nueva |
 | `benchmark` | medición reproducible de modelo, tools y cancelación | observación |
 
-En fases posteriores se crearán paquetes `audio`, `planner`, `browser` y un
+En fases posteriores se crearán paquetes `planner`, `browser` y un
 proyecto `broker/JarvisLocal.Broker` solo cuando contengan una
 implementación real; no se mantienen directorios vacíos ni abstracciones ficticias.
+
+## Interfaz de voz
+
+```text
+GetAsyncKeyState(acorde configurado)
+  → SoundDeviceRecorder / WASAPI compartido
+  → STTProvider (faster-whisper CPU INT8 + Silero VAD)
+  → VoiceSessionManager
+  → misma sesión y Orchestrator de texto
+  → TTSProvider
+     ├─ Piper (fallback técnico)
+     └─ Chatterbox worker aislado (voz propia, CPU, offline)
+  → SoundDevicePlayer / WASAPI compartido
+```
+
+`VoiceSessionManager` serializa turnos y aplica estados explícitos. Voz no puede
+confirmar acciones sensibles: cualquier confirmación sigue entrando por la CLI
+local confiable y queda ligada al `request_id`. Audio y transcripción no se
+guardan en auditoría; solo metadatos y latencias. No existe escucha continua.
+
+Chatterbox vive en `.venv-chatterbox` porque su NumPy/PyTorch no son compatibles
+con la pila ligera del core. El worker no escucha red: usa stdin/stdout, archivos
+fijados y variables offline. Terminar el proceso ofrece cancelación real de una
+inferencia Torch. El consentimiento local liga la muestra propia por SHA-256.
 
 ## Flujo de una acción
 
@@ -159,6 +184,8 @@ antes de acceder a datos.
   implementado en Fase 1 con offload adaptable a VRAM disponible.
 - **`llama-server` embeddings:** segundo proceso loopback, Qwen3-Embedding-0.6B,
   pooling `last`, CPU por defecto y carga bajo demanda.
+- **Worker Chatterbox opcional:** proceso local sin puerto, entorno Python
+  separado, CPU y carga bajo demanda; bloqueado hasta enrolamiento explícito.
 - **Broker .NET 8:** named pipe con ACL por usuario; FS/procesos/UIA/captura. No
   acepta comandos libres ni confía en el riesgo enviado por Python.
 - **Índice ANN futuro:** Qdrant o extensión SQLite solo si el benchmark supera la

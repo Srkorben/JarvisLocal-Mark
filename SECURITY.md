@@ -31,7 +31,7 @@ El riesgo lo recalcula `PolicyEngine` a partir de herramienta, rutas,
 reversibilidad, efectos externos y elevación. Un nivel declarado por el LLM no se
 acepta como autoridad.
 
-## Controles activos en Fases 0, 1, 3 y 4
+## Controles activos en Fases 0, 1, 2, 3 y 4
 
 - servicios de modelo restringidos a `http://127.0.0.1`;
 - listas blancas independientes de herramientas, rutas, aplicaciones y dominios;
@@ -58,6 +58,13 @@ acepta como autoridad.
 - auditoría sin contenido de conversaciones ni salida de herramientas por defecto;
 - triggers que impiden `UPDATE` y `DELETE` de eventos;
 - hashes encadenados que detectan cambios externos y no se recalculan al arrancar.
+- PTT explícito y visible; no hay wake word, escucha permanente ni keylogging;
+- audio de turnos no persistido y transcripción omitida de auditoría por defecto;
+- transcripción ambigua/silenciosa no llega al LLM ni a herramientas;
+- voz hablada nunca crea un `ConfirmationReceipt` ni concede permisos;
+- Chatterbox aislado sin puerto, en modo offline y CPU por defecto;
+- clonación bloqueada sin muestra propia y consentimiento local ligado por SHA-256;
+- cancelación de Chatterbox termina su proceso en vez de fingir corte cooperativo.
 
 La cadena hash detecta alteraciones, pero aún no tiene un ancla firmada fuera de
 SQLite. Un atacante con control total de la cuenta podría reemplazar toda la base.
@@ -102,12 +109,27 @@ No se aceptará una herramienta de «ejecutar cualquier comando». PowerShell so
 podrá aparecer detrás de plantillas cerradas y parámetros validados, si una API
 estructurada no existe.
 
+## Voz clonada
+
+La voz sintética es salida expresiva, no identidad ni autenticación. El
+enrolamiento exige una acción CLI local, la frase exacta `MI VOZ` y almacena una
+muestra dentro de `data/voices/user`, ignorada por Git. El manifiesto solo autoriza
+TTS local de JarvisLocal. Si la muestra cambia, el hash deja de coincidir y el
+worker no arranca. No existe una herramienta del LLM para enrolar, sustituir o
+exportar una voz.
+
+Los pesos y el tokenizador se descargan en setup; al ejecutar, el worker establece
+modo offline y deshabilita telemetría de Hugging Face. El modelo incorpora su
+marca de agua PerTh. Esto no elimina el riesgo de suplantación si otro software
+obtiene la muestra, por lo que el directorio debe considerarse sensible y quedar
+fuera de sincronización cloud.
+
 ## Detención
 
-Hoy `Ctrl+C` detiene la CLI y cada herramienta cooperativa consulta el token antes
-y después de actuar. Copia borra parciales y movimiento revierte si se cancela
-durante la operación. El proveedor cancela generación cerrando el stream HTTP; la
-prueba real con `llama-server` midió 94 ms y confirmó que el servidor siguió listo.
-La hotkey global y el botón de bandeja son trabajo de Fase 5.
+`Ctrl+C` detiene la CLI y cada herramienta cooperativa consulta el token antes y
+después de actuar. `Ctrl+Alt+Pause` cancela el turno de voz global incluso sin foco:
+detiene reproducción, stream HTTP y worker de clonación. Copia borra parciales y
+movimiento revierte si se cancela durante la operación. El botón de bandeja sigue
+siendo trabajo de Fase 5.
 
 Consulta el análisis completo en [docs/threat-model.md](docs/threat-model.md).

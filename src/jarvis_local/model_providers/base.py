@@ -129,9 +129,10 @@ class ModelProvider(ABC):
             if event.kind == "text_delta" and event.text:
                 if first_token_seconds is None:
                     first_token_seconds = time.monotonic() - started
-                content_parts.append(event.text)
+                safe_delta = _utf8_safe_text(event.text)
+                content_parts.append(safe_delta)
                 if on_text_delta is not None:
-                    callback_result = on_text_delta(event.text)
+                    callback_result = on_text_delta(safe_delta)
                     if inspect.isawaitable(callback_result):
                         await callback_result
             elif event.kind == "tool_delta":
@@ -161,7 +162,7 @@ class ModelProvider(ABC):
             part = tool_parts[index]
             raw_arguments = str(part["arguments"] or "{}")
             try:
-                arguments = json.loads(raw_arguments)
+                arguments = _utf8_safe_value(json.loads(raw_arguments))
             except json.JSONDecodeError as exc:
                 raise ModelProviderError(
                     "invalid_tool_arguments",
@@ -212,6 +213,29 @@ class ModelProvider(ABC):
 
     async def aclose(self) -> None:
         return None
+
+
+def _utf8_safe_text(value: str) -> str:
+    """Reemplaza sustitutos aislados que no pueden serializarse como UTF-8."""
+
+    return value.encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _utf8_safe_value(value: Any) -> Any:
+    """Limpia recursivamente datos no confiables antes de reutilizarlos en JSON."""
+
+    if isinstance(value, str):
+        return _utf8_safe_text(value)
+    if isinstance(value, dict):
+        return {
+            _utf8_safe_text(str(key)): _utf8_safe_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_utf8_safe_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_utf8_safe_value(item) for item in value)
+    return value
 
 
 async def next_line_or_cancel(

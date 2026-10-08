@@ -7,10 +7,10 @@ sistema operativo.
 
 ## Estado actual
 
-Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. Existe conversación
-textual local, memoria/RAG y un conjunto limitado de herramientas deterministas
-para Windows. No se ha iniciado voz, Playwright, UI Automation, broker C#, OCR ni
-visión.
+Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. La Fase 2 ya tiene un
+pipeline push-to-talk local completo y un turno E2E validado; falta enrolar y
+aceptar la voz propia para cerrarla. No se ha iniciado wake word, Playwright, UI
+Automation, broker C#, OCR ni visión.
 
 Funciona ahora:
 
@@ -31,6 +31,10 @@ Funciona ahora:
 - herramientas deterministas de búsqueda, apertura, proyectos, Git y archivos;
 - permisos `open`, `execute` y `write` denegados por defecto;
 - creación/copia sin sobrescritura y movimiento sensible confirmado con rollback.
+- micrófono/altavoces WASAPI, hotkey global, estados explícitos y semidúplex;
+- `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
+- `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
+- Chatterbox LatAm aislado/offline para la voz propia, bloqueado por consentimiento.
 
 El benchmark reproducible obtuvo 0,688 s de TTFT mediano, 54,85 tokens/s, 3/3
 casos de tool calling y cancelación en 94 ms. Son medidas de esta máquina y no una
@@ -38,6 +42,10 @@ garantía. El benchmark RAG obtuvo 4/4 fuentes esperadas y 1,524 s de latencia
 mediana de consulta con embeddings en CPU. Consulta [PROJECT_STATUS.md](PROJECT_STATUS.md),
 el [benchmark del LLM](benchmarks/results/qwen3-8b-q4_k_m-ctx8192.md) y el
 [benchmark RAG](benchmarks/results/rag-qwen3-embedding-0.6b-q8_0.md).
+La prueba E2E con audio sintético obtuvo 11,735 s sin reproducción y reveló
+errores con nombres técnicos; consulta el
+[benchmark de voz](benchmarks/results/audio-phase2.md). No se promete latencia
+conversacional hasta medir la muestra propia.
 
 ## Preparación
 
@@ -60,6 +68,13 @@ El script crea `.venv`, instala el paquete y dependencias de desarrollo, ejecuta
 las pruebas y termina con diagnóstico. Si encuentra un entorno de otra versión de
 Python, lo preserva como `.venv.incompatible-<fecha>`.
 
+La clonación usa deliberadamente otro entorno. Ya está instalado en esta máquina;
+para recrearlo descarga un único modelo LatAm fijado (~3,21 GB):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
+```
+
 ## Uso y verificación
 
 ```powershell
@@ -72,6 +87,15 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 # Diagnóstico y cadena de auditoría
 .\.venv\Scripts\python.exe -m jarvis_local.cli --doctor
 .\.venv\Scripts\python.exe -m jarvis_local.cli --verify-audit
+
+# Enrolar conscientemente 15 s de tu propia voz (una sola vez)
+.\.venv\Scripts\python.exe -m jarvis_local.cli `
+  --enroll-own-voice --voice-enroll-seconds 15
+
+# Inventario, diagnóstico y conversación PTT
+.\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
+.\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
+.\.venv\Scripts\python.exe -m jarvis_local.cli --voice
 
 # Proyecto activo, índice incremental y consulta con fuentes
 .\.venv\Scripts\python.exe -m jarvis_local.cli --list-projects
@@ -104,9 +128,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
 ```
 
-`Ctrl+C` termina la CLI. La cancelación del token interrumpe una generación
-activa y cierra el stream. La hotkey global `Ctrl+Alt+Pause` llegará en la fase de
-acceso permanente.
+En voz, mantén `Ctrl+Alt+J` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
+turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confirma
+acciones sensibles. Chatterbox está seleccionado y fallará cerrado mientras no
+existan la muestra y su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
 
 ## Configuración de modelos
 
@@ -155,6 +180,7 @@ JarvisLocal/
 ├─ scripts/                instalación y ejecución
 ├─ src/jarvis_local/
 │  ├─ model_providers/     contrato, Ollama, llama.cpp y gestor del servidor
+│  ├─ audio/               WASAPI, STT/TTS, PTT, estados y enrolamiento
 │  ├─ memory/              trabajo, episodios y perfil explícito
 │  ├─ rag/                 extracción, embeddings, índice y recuperación híbrida
 │  ├─ cli.py               interfaz local confiable

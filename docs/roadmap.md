@@ -7,7 +7,7 @@ baja, media, alta o experimental.
 |---|---|---|---|---|
 | 0 — Esqueleto seguro | contratos, config, SQLite, proyectos, política, auditoría, cancelación, presupuestos y simulador | Python 3.12, asyncio, Pydantic, SQLite | media; una frontera defectuosa compromete todo | acciones evaluables sin operaciones peligrosas; **completa** |
 | 1 — Texto local | servidor de modelo, streaming, historial y tool-calling estricto | llama.cpp/llama-server, Qwen3-8B GGUF Q4_K_M | media; VRAM, schema y cancelación | chat local cancelable y medido; **completa** |
-| 2 — Voz PTT | WASAPI, VAD, STT, TTS, hotkey y corte de audio | sounddevice/Windows audio, Silero VAD, faster-whisper, Piper | media-alta; drivers, eco y latencia | conversación local push-to-talk |
+| 2 — Voz PTT | WASAPI, VAD, STT/TTS sustituibles, hotkey y corte de audio | sounddevice, Silero integrado, faster-whisper, Chatterbox/Piper | media-alta; drivers, calidad y latencia | **infraestructura completa; aceptación de voz propia pendiente** |
 | 3 — Memoria/RAG | proyectos, indexador, FTS5, vectores, citas y diario semántico | SQLite FTS5, Qwen3-Embedding-0.6B; ANN solo si escala | alta; mezcla de proyectos e inyección | respuestas con evidencia trazable; **completa** |
 | 4 — Herramientas deterministas | 10 herramientas de búsqueda, apertura, Git y archivos | APIs Python/Win32, Git, ShellExecute | media; TOCTOU y rollback | operaciones verificadas sin mouse; **completa con escritura deny-by-default** |
 | 5 — Acceso permanente | bandeja, inicio opcional, PTT, wake word, indicadores y emergencia | .NET/WinUI o tray local, openWakeWord | media-alta; privacidad del micrófono | disponibilidad visible en segundo plano |
@@ -29,12 +29,14 @@ Fase 7 no será una dependencia seria hasta cumplir simultáneamente:
 
 ## Estado de transición
 
-Las Fases 0, 1, 3 y 4 están cerradas. Fase 4 quedó validada con suite completa,
+Las Fases 0, 1, 3 y 4 están cerradas. La Fase 2 tiene pipeline, hardware, tests y
+turno E2E validados; el usuario rechazó Piper y se instaló Chatterbox LatAm
+aislado. Falta enrolar/evaluar su muestra antes de cerrar la aceptación. Fase 4 quedó validada con suite completa,
 smoke test de archivos/Git y tool call real del LLM. Escritura, apertura y
 ejecución permanecen denegadas por proyecto hasta habilitación explícita. La
 evaluación de CORE sólo añadió decisiones temporales en SQLite; tareas, reglas,
-MCP y eventos continúan diferidos. La siguiente prioridad es Fase 2 (voz local
-push-to-talk); no se autoriza browser, UIA, broker o visión.
+MCP y eventos continúan diferidos. La prioridad inmediata es enrolar y validar la
+voz propia para cerrar Fase 2; no se autoriza browser, UIA, broker o visión.
 
 ## Clasificación de expectativas
 

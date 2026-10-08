@@ -28,3 +28,18 @@ Resultado validado:
 [`results/rag-qwen3-embedding-0.6b-q8_0.md`](results/rag-qwen3-embedding-0.6b-q8_0.md).
 Las cuatro preguntas evitan depender del LLM generativo: evalúan recuperación y
 trazabilidad de forma determinista. No miden calidad universal ni escalabilidad.
+
+El benchmark de Fase 2 sintetiza cinco órdenes españolas, las transcribe y
+ejecuta un turno real sobre el mismo Core. Comprueba la selección y auditoría de
+`get_current_time`, TTFT y primer audio. La salida física solo se activa de forma
+explícita:
+
+```powershell
+.\.venv\Scripts\python.exe -m jarvis_local.audio_benchmark
+.\.venv\Scripts\python.exe -m jarvis_local.audio_benchmark --hardware-output
+```
+
+Piper→Whisper sirve como regresión reproducible, no como medición de una voz
+humana. El usuario rechazó la voz Piper y Chatterbox quedó seleccionado; su
+benchmark real exige primero enrolar la voz propia. Resultado actual:
+[`results/audio-phase2.md`](results/audio-phase2.md).

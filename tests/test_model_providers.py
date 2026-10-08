@@ -176,6 +176,41 @@ class ModelProviderTests(IsolatedAsyncioTestCase):
             self.assertEqual(response.tool_calls[0].name, "get_current_time")
             self.assertEqual(response.tool_calls[0].arguments["expected_result"], "hora local")
 
+    async def test_invalid_unicode_from_model_is_safe_for_next_json_round(self) -> None:
+        events = [
+            {
+                "choices": [
+                    {
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call-unicode",
+                                    "function": {
+                                        "name": "get_current_time",
+                                        "arguments": '{"expected_result":"hora \\udced local"}',
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ]
+            }
+        ]
+        with TemporaryDirectory() as directory, _SseServer(events) as server:
+            settings = make_settings(
+                Path(directory),
+                model_provider="llama_cpp",
+                model_base_url=f"http://127.0.0.1:{server.port}/v1",
+            )
+            response = await LlamaCppProvider(settings).complete_chat(
+                [{"role": "user", "content": "hora"}], [], CancellationToken()
+            )
+            value = response.tool_calls[0].arguments["expected_result"]
+            self.assertEqual(value, "hora ? local")
+            json.dumps(response.model_dump(mode="json"), ensure_ascii=False).encode("utf-8")
+
     async def test_invalid_tool_json_is_structured_error(self) -> None:
         events = [{
             "choices": [{

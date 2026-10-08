@@ -46,6 +46,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", help="Sobrescribe temporalmente el modelo configurado")
     parser.add_argument("--once", help="Ejecuta una sola instrucción y termina")
     parser.add_argument("--doctor", action="store_true", help="Comprueba seguridad, datos y modelo local")
+    parser.add_argument("--audio-doctor", action="store_true", help="Comprueba dispositivos y modelos de voz locales")
+    parser.add_argument("--list-audio-devices", action="store_true", help="Lista dispositivos PortAudio/WASAPI")
+    parser.add_argument("--voice", action="store_true", help="Inicia conversación push-to-talk global")
+    parser.add_argument(
+        "--enroll-own-voice",
+        action="store_true",
+        help="Graba localmente una muestra para clonación de la voz propia",
+    )
+    parser.add_argument(
+        "--voice-enroll-seconds",
+        type=float,
+        default=15.0,
+        help="Duración de la muestra propia (10–30 s)",
+    )
     parser.add_argument(
         "--start-model-server",
         action="store_true",
@@ -182,6 +196,115 @@ async def async_main(argv: list[str] | None = None) -> int:
     project = projects.ensure_bootstrap_project("JarvisLocal", settings.project_dir)
     memory = MemoryRepository(database)
     controller = CancellationController()
+
+    if args.list_audio_devices:
+        from .audio import SoundDeviceCatalog
+
+        print(
+            json.dumps(
+                [item.model_dump(mode="json") for item in SoundDeviceCatalog.list_devices()],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    if args.audio_doctor:
+        from .audio import AudioError, audio_diagnostics
+
+        try:
+            report = await audio_diagnostics(settings)
+        except AudioError as exc:
+            print(json.dumps(exc.as_dict(), ensure_ascii=False, indent=2), file=sys.stderr)
+            return 1
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.enroll_own_voice:
+        from .audio import AudioError, SoundDeviceRecorder
+        from .audio.enrollment import create_own_voice_consent, write_reference_wav
+
+        seconds = args.voice_enroll_seconds
+        if not 10 <= seconds <= 30:
+            print("--voice-enroll-seconds debe estar entre 10 y 30.", file=sys.stderr)
+            return 2
+        reference = settings.tts_clone_reference_path
+        consent = settings.tts_clone_consent_path
+        if reference is None or consent is None:
+            print("voice_clone.reference_path/consent_path no están configurados.", file=sys.stderr)
+            return 2
+        try:
+            reference.resolve().relative_to(settings.data_dir.resolve())
+            consent.resolve().relative_to(settings.data_dir.resolve())
+        except ValueError:
+            print("La muestra y el consentimiento deben quedar dentro de data_dir.", file=sys.stderr)
+            return 2
+        if reference.exists() or consent.exists():
+            print(
+                "Ya existe un enrolamiento. No se sobrescribe automáticamente; "
+                "elimina explícitamente ambos archivos si deseas repetirlo.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            "Esta función es únicamente para tu propia voz. La muestra permanecerá "
+            "local y no autoriza confirmaciones de seguridad."
+        )
+        confirmation = input("Escribe exactamente MI VOZ para continuar: ").strip()
+        if confirmation != "MI VOZ":
+            print("Enrolamiento cancelado.")
+            return 1
+        print(
+            "Lee con voz natural: 'JarvisLocal es mi asistente personal. Hoy voy a "
+            "organizar mis proyectos, revisar documentos y consultar el estado de Git.'"
+        )
+        input("Pulsa Enter cuando estés listo; la grabación será visible: ")
+        recorder = SoundDeviceRecorder(
+            selector=settings.audio_input_device,
+            target_sample_rate=settings.audio_sample_rate,
+            max_seconds=seconds + 1,
+        )
+        try:
+            print("[MICRÓFONO ACTIVO — grabando muestra propia]", flush=True)
+            recorder.start()
+            await asyncio.sleep(seconds)
+            audio = recorder.stop()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            recorder.abort()
+            print("[MICRÓFONO INACTIVO — enrolamiento cancelado]")
+            return 1
+        except AudioError as exc:
+            recorder.abort()
+            print(json.dumps(exc.as_dict(), ensure_ascii=False), file=sys.stderr)
+            return 1
+        print("[MICRÓFONO INACTIVO]", flush=True)
+        if audio.rms < settings.audio_min_rms:
+            print("La muestra parece silenciosa y no se guardó.", file=sys.stderr)
+            return 1
+        write_reference_wav(reference, audio)
+        record = create_own_voice_consent(
+            reference_path=reference,
+            consent_path=consent,
+            duration_seconds=audio.duration_seconds,
+        )
+        database.record_audit(
+            session_id=None,
+            project_id=project.id,
+            event_type="voice_enrollment",
+            outcome="success",
+            detail={
+                "reference_sha256": record["reference_sha256"],
+                "duration_seconds": record["duration_seconds"],
+                "source": record["source"],
+                "audio_content_stored_in_audit": False,
+            },
+        )
+        print(f"Muestra local guardada: {reference}")
+        print(
+            "La voz Chatterbox ya está seleccionada. Ejecuta --audio-doctor y luego "
+            "--voice para validarla."
+        )
+        return 0
 
     if args.verify_audit:
         valid, errors = database.verify_audit_chain()
@@ -500,6 +623,75 @@ async def async_main(argv: list[str] | None = None) -> int:
         print(delta, end="", flush=True)
 
     try:
+        if args.voice:
+            from .audio import (
+                SoundDevicePlayer,
+                SoundDeviceRecorder,
+                VoiceSessionManager,
+                VoiceState,
+                WindowsKeyChord,
+                create_stt_provider,
+                create_tts_provider,
+                run_push_to_talk_loop,
+            )
+
+            def voice_state(state: VoiceState) -> None:
+                labels = {
+                    VoiceState.IDLE: "[LISTO]",
+                    VoiceState.RECORDING: "[MICRÓFONO ACTIVO — habla ahora]",
+                    VoiceState.TRANSCRIBING: "[TRANSCRIBIENDO]",
+                    VoiceState.PROCESSING: "[PROCESANDO]",
+                    VoiceState.SPEAKING: "[REPRODUCIENDO VOZ]",
+                    VoiceState.CANCELLING: "[CANCELANDO]",
+                    VoiceState.ERROR: "[ERROR DE AUDIO]",
+                }
+                print(f"\n{labels[state]}", flush=True)
+
+            def voice_transcript(text: str) -> None:
+                print(f"\nTú (transcripción)> {text}", flush=True)
+                print(f"\n{settings.assistant_name}> ", end="", flush=True)
+
+            def voice_delta(delta: str) -> None:
+                print(delta, end="", flush=True)
+
+            recorder = SoundDeviceRecorder(
+                selector=settings.audio_input_device,
+                target_sample_rate=settings.audio_sample_rate,
+                max_seconds=settings.audio_max_record_seconds,
+            )
+            player = SoundDevicePlayer(selector=settings.audio_output_device)
+            manager = VoiceSessionManager(
+                database=database,
+                orchestrator=orchestrator,
+                project=project,
+                session_id=session_id,
+                cancellation=controller,
+                recorder=recorder,
+                player=player,
+                stt=create_stt_provider(settings),
+                tts=create_tts_provider(settings),
+                min_record_seconds=settings.audio_min_record_seconds,
+                min_rms=settings.audio_min_rms,
+                max_turn_seconds=settings.max_runtime_seconds,
+                max_record_seconds=settings.audio_max_record_seconds,
+                on_state=voice_state,
+                on_transcript=voice_transcript,
+                on_text_delta=voice_delta,
+            )
+            print("Cargando STT y TTS locales…", flush=True)
+            await manager.warmup()
+            print(
+                f"Voz local lista — proyecto: {project.name}\n"
+                f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
+                f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Jarvis."
+            )
+            await run_push_to_talk_loop(
+                manager,
+                ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
+                cancel=WindowsKeyChord.parse(settings.audio_cancel_hotkey),
+            )
+            return 0
+
         if args.once:
             try:
                 await orchestrator.chat(

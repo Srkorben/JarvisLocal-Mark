@@ -37,7 +37,7 @@ if (-not (Test-Path -LiteralPath $VenvPath)) {
 
 $PythonExe = Join-Path $VenvPath 'Scripts\python.exe'
 & $PythonExe -m pip install --upgrade pip setuptools
-& $PythonExe -m pip install --editable "${ProjectRoot}[dev]"
+& $PythonExe -m pip install --editable "${ProjectRoot}[dev,audio]"
 & $PythonExe -m pytest -q (Join-Path $ProjectRoot 'tests')
 & $PythonExe -m jarvis_local.cli --config (Join-Path $ProjectRoot 'config\jarvis.toml') --doctor
 

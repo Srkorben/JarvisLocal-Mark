@@ -7,7 +7,13 @@ import httpx
 
 from ..cancellation import CancellationToken
 from ..config import Settings
-from .base import ModelProvider, ModelStreamEvent, ModelUsage, ProviderHealth
+from .base import (
+    ModelProvider,
+    ModelStreamEvent,
+    ModelUsage,
+    ProviderHealth,
+    _utf8_safe_value,
+)
 from .http import require_loopback_url, stream_json_lines
 from .llama_server import LlamaServerManager
 
@@ -84,7 +90,7 @@ class LlamaCppProvider(ModelProvider):
         async for item in stream_json_lines(
             provider=self.name,
             url=f"{self.base_url}/chat/completions",
-            payload=payload,
+            payload=_utf8_safe_value(payload),
             cancellation=cancellation,
             timeout_seconds=self.settings.request_timeout_seconds,
             sse=True,

@@ -8,7 +8,7 @@
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | Pendiente | no iniciado |
+| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 87 pruebas + E2E; falta enrolar/evaluar voz propia |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
 | 5 — Acceso permanente | Pendiente | no iniciado |
@@ -18,6 +18,25 @@
 
 Incremento posterior a Fase 4: **evaluación de CORE y decisiones temporales,
 completado**. No constituye una fase nueva y no cambia la prioridad de voz PTT.
+
+## Fase 2 implementada
+
+- contratos `STTProvider`, `TTSProvider`, recorder y player sustituibles;
+- máquina de estados semidúplex con exclusión de turnos concurrentes;
+- WASAPI compartido, selección de dispositivo y resampling explícito;
+- hotkeys globales configurables `Ctrl+Alt+J` y `Ctrl+Alt+Pause`;
+- faster-whisper small multilingüe, CPU INT8, Silero VAD y hotwords;
+- transcripción visible, detección de silencio/ambigüedad y Unicode seguro;
+- mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
+- Piper validado como fallback; su voz fue rechazada por el usuario;
+- Chatterbox LatAm instalado en proceso/venv separado, CPU y offline;
+- enrolamiento de voz propia con consentimiento local y SHA-256;
+- cancelación durante captura, STT, LLM, playback y worker de clonación;
+- auditoría de metadatos/latencia sin almacenar audio ni transcripción.
+
+La aceptación no se cierra todavía: Chatterbox falla cerrado hasta que el usuario
+grabe su muestra y evalúe semejanza, naturalidad y latencia. No se inició wake
+word, escucha continua, full-duplex, bandeja, UIA, Playwright ni visión.
 
 ## Fase 1 implementada
 
@@ -109,10 +128,11 @@ privilegios. El modelo no puede cambiar permisos.
 ## Validación ejecutada
 
 ```text
-python -m pytest -q                         71/71 OK
+python -m pytest -q                         87/87 OK (+3 subtests)
 python -m compileall -q src tests           OK
 python -m jarvis_local.cli --doctor         OK
 python -m jarvis_local.cli --verify-audit   OK
+python -m jarvis_local.cli --audio-doctor   BLOQUEO esperado: reference_missing
 chat real en español con llama-server       OK
 tool call real get_current_time             OK
 benchmark Qwen3-8B                          OK
@@ -123,6 +143,10 @@ python -m jarvis_local.phase4_smoke          6/6 operaciones OK
 LLM → find_files → política → auditoría      OK
 decisión A → corrección B → consulta         OK, vigente/anterior e historial 2
 olvido explícito → auditoría                 OK, 2 registros eliminados
+hardware WASAPI micrófono/altavoz            OK; entrada fue silencio
+Piper→Whisper→LLM→tool→TTS                   OK, sin reproducción en benchmark final
+worker Chatterbox LatAm CPU/offline          OK, carga ~50 s
+voz clonada del usuario                      PENDIENTE de muestra/aceptación
 ```
 
 La suite cubre: cambio de proveedor, proveedor indisponible, respuesta normal,
@@ -143,6 +167,28 @@ El incremento temporal añade contradicción, vigencia, procedencia documental,
 confirmación obligatoria, permiso `memory`, aislamiento entre proyectos, consulta
 tipada auditada y eliminación explícita. La suite completa y el diagnóstico real
 siguen correctos; la cadena append-only de auditoría permanece válida.
+
+Fase 2 añade silencio/ruido sintético, dispositivos ausentes, estados, turnos
+repetidos, cancelación en cuatro etapas, Unicode STT inválido, consulta temporal
+aislada, RAG con fuente, tool call real, intento de elevar permisos por voz,
+consentimiento ligado a muestra, worker aislado y terminación de inferencia.
+
+## Benchmark de voz
+
+| Métrica | Resultado observado |
+|---|---:|
+| Casos STT no ambiguos | 5/5 |
+| WER medio Piper→Whisper | 0,437 |
+| Mediana STT | 5,016 s |
+| Turno E2E con herramienta | aprobado |
+| TTFT desde cierre | 7,704 s |
+| Primer audio generado | 10,829 s |
+| Total sin playback | 11,735 s |
+| RAM Python final | 705,32 MiB |
+
+El conjunto sintético no representa la voz real y evidencia errores en README,
+Git/Jarvis. Chatterbox aún no tiene benchmark de semejanza ni síntesis porque no
+existe una muestra consentida. Informe: `benchmarks/results/audio-phase2.md`.
 
 ## Benchmark validado
 
@@ -197,7 +243,7 @@ evaluación universal. Informe: [benchmarks/results/rag-qwen3-embedding-0.6b-q8_
 
 ## Cierre del incremento
 
-Fase 4 y el incremento temporal están cerrados. No se ha iniciado voz, Playwright, UI Automation, broker,
-OCR ni visión. La apertura se limita al despacho estructurado de Windows y no
-interpreta interfaces. La siguiente prioridad del roadmap es Fase 2, voz local
-push-to-talk. No se debe iniciar otra fase sin un incremento solicitado.
+Fase 4 y el incremento temporal están cerrados. Fase 2 está implementada hasta la
+puerta de aceptación: requiere que el usuario enrole y pruebe su propia voz. No se
+ha iniciado wake word, Playwright, UI Automation, broker, OCR ni visión. No se
+debe iniciar otra fase hasta cerrar la validación humana de voz.
