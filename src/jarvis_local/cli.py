@@ -643,7 +643,7 @@ async def async_main(argv: list[str] | None = None) -> int:
                     VoiceState.PROCESSING: "[PROCESANDO]",
                     VoiceState.SPEAKING: "[REPRODUCIENDO VOZ]",
                     VoiceState.CANCELLING: "[CANCELANDO]",
-                    VoiceState.ERROR: "[ERROR DE AUDIO]",
+                    VoiceState.ERROR: "[ERROR EN EL TURNO DE VOZ]",
                 }
                 print(f"\n{labels[state]}", flush=True)
 
@@ -653,6 +653,9 @@ async def async_main(argv: list[str] | None = None) -> int:
 
             def voice_delta(delta: str) -> None:
                 print(delta, end="", flush=True)
+
+            def voice_error(message: str) -> None:
+                print(f"\nDetalle: {message}", flush=True)
 
             recorder = SoundDeviceRecorder(
                 selector=settings.audio_input_device,
@@ -677,6 +680,7 @@ async def async_main(argv: list[str] | None = None) -> int:
                 on_state=voice_state,
                 on_transcript=voice_transcript,
                 on_text_delta=voice_delta,
+                on_error=voice_error,
             )
             print("Cargando STT y TTS locales…", flush=True)
             await manager.warmup()

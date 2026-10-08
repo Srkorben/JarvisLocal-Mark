@@ -8,7 +8,7 @@
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 94 pruebas + E2E; falta enrolar/evaluar voz propia |
+| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 95 pruebas + E2E; muestra enrolada y síntesis real, falta evaluar naturalidad |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
 | 5 — Acceso permanente | **Parcial** | centro web/shortcut listo; faltan bandeja, wake word e inicio de sesión |
@@ -49,11 +49,12 @@ de origen permanecen intactos.
 - Piper validado como fallback; su voz fue rechazada por el usuario;
 - Chatterbox LatAm instalado en proceso/venv separado, CPU y offline;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
+- transporte JSONL ampliado y acotado para el PCM16 base64 de Chatterbox;
 - cancelación durante captura, STT, LLM, playback y worker de clonación;
 - auditoría de metadatos/latencia sin almacenar audio ni transcripción.
 
-La aceptación no se cierra todavía: Chatterbox falla cerrado hasta que el usuario
-grabe su muestra y evalúe semejanza, naturalidad y latencia. No se inició wake
+La aceptación no se cierra todavía: la muestra ya fue grabada y la síntesis es
+funcional, pero el usuario debe evaluar semejanza y naturalidad. No se inició wake
 word, escucha continua, full-duplex, bandeja, UIA, Playwright ni visión.
 
 ## Fase 1 implementada
@@ -146,11 +147,11 @@ privilegios. El modelo no puede cambiar permisos.
 ## Validación ejecutada
 
 ```text
-python -m pytest -q                         94/94 OK (+3 subtests)
+python -m pytest -q                         95/95 OK (+3 subtests)
 python -m compileall -q src tests           OK
 python -m jarvis_local.cli --doctor         OK
 python -m jarvis_local.cli --verify-audit   OK
-python -m jarvis_local.cli --audio-doctor   BLOQUEO esperado: reference_missing
+python -m jarvis_local.cli --audio-doctor   OK; Chatterbox CPU/offline ~46,08 s
 chat real en español con llama-server       OK
 tool call real get_current_time             OK
 benchmark Qwen3-8B                          OK
@@ -163,8 +164,8 @@ decisión A → corrección B → consulta         OK, vigente/anterior e histor
 olvido explícito → auditoría                 OK, 2 registros eliminados
 hardware WASAPI micrófono/altavoz            OK; entrada fue silencio
 Piper→Whisper→LLM→tool→TTS                   OK, sin reproducción en benchmark final
-worker Chatterbox LatAm CPU/offline          OK, carga ~50 s
-voz clonada del usuario                      PENDIENTE de muestra/aceptación
+worker Chatterbox LatAm CPU/offline          OK, carga ~46–50 s
+voz clonada del usuario                      PCM válido: 2,36 s; cold start 115,94 s
 control_center unit/API security             7/7 OK
 control_center smoke HTTP/Windows            9 tools; open/start/stop OK
 segunda apertura del centro                  mismo PID/puerto, sin duplicado
@@ -208,8 +209,9 @@ consentimiento ligado a muestra, worker aislado y terminación de inferencia.
 | RAM Python final | 705,32 MiB |
 
 El conjunto sintético no representa la voz real y evidencia errores en README,
-Git/Jarvis. Chatterbox aún no tiene benchmark de semejanza ni síntesis porque no
-existe una muestra consentida. Informe: `benchmarks/results/audio-phase2.md`.
+Git/Jarvis. Con la muestra consentida, Chatterbox produjo 2,36 s de PCM válido
+para una frase de prueba en 115,94 s desde arranque frío; falta evaluación humana
+de semejanza. Informe base: `benchmarks/results/audio-phase2.md`.
 
 ## Benchmark validado
 
@@ -265,6 +267,6 @@ evaluación universal. Informe: [benchmarks/results/rag-qwen3-embedding-0.6b-q8_
 ## Cierre del incremento
 
 Fase 4 y el incremento temporal están cerrados. Fase 2 está implementada hasta la
-puerta de aceptación: requiere que el usuario enrole y pruebe su propia voz. No se
+puerta de aceptación: requiere que el usuario escuche y valore su propia voz. No se
 ha iniciado wake word, Playwright, UI Automation, broker, OCR ni visión. No se
 debe iniciar otra fase hasta cerrar la validación humana de voz.

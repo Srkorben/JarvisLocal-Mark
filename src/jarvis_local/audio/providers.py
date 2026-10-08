@@ -26,6 +26,14 @@ from .models import (
 )
 
 
+# Las respuestas del worker contienen PCM16 codificado en base64 dentro de una
+# sola línea JSON. Incluso una frase breve supera fácilmente el límite de
+# 64 KiB de asyncio.StreamReader. El límite sigue siendo acotado para que un
+# worker defectuoso no pueda hacer crecer la memoria del núcleo sin control.
+_CHATTERBOX_IPC_LIMIT_BYTES = 32 * 1024 * 1024
+_CHATTERBOX_MAX_PCM_BYTES = 24 * 1024 * 1024
+
+
 class FasterWhisperSTTProvider(STTProvider):
     name = "faster_whisper"
 
@@ -392,6 +400,7 @@ class ChatterboxTTSProvider(TTSProvider):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=log_handle,
+                limit=_CHATTERBOX_IPC_LIMIT_BYTES,
                 cwd=str(self.model_path),
                 env=worker_environment,
                 creationflags=creation_flags,
@@ -479,6 +488,20 @@ class ChatterboxTTSProvider(TTSProvider):
                         component="voice_clone",
                     )
                 raw = base64.b64decode(payload["pcm16_base64"], validate=True)
+                if len(raw) > _CHATTERBOX_MAX_PCM_BYTES:
+                    await self._stop_process()
+                    raise AudioError(
+                        "synthesis_response_too_large",
+                        "Chatterbox devolvió más audio del permitido para una frase.",
+                        component="voice_clone",
+                    )
+                if len(raw) % 2:
+                    await self._stop_process()
+                    raise AudioError(
+                        "invalid_audio_payload",
+                        "Chatterbox devolvió PCM16 con longitud inválida.",
+                        component="voice_clone",
+                    )
                 samples = np.frombuffer(raw, dtype="<i2").astype(np.int16, copy=True)
                 cancellation.raise_if_cancelled()
                 return SynthesizedAudio(

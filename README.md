@@ -8,8 +8,8 @@ sistema operativo.
 ## Estado actual
 
 Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. La Fase 2 ya tiene un
-pipeline push-to-talk local completo y un turno E2E validado; falta enrolar y
-aceptar la voz propia para cerrarla. No se ha iniciado wake word, Playwright, UI
+pipeline push-to-talk local completo, una muestra propia enrolada y síntesis E2E
+validada; falta la aceptación humana de naturalidad para cerrarla. No se ha iniciado wake word, Playwright, UI
 Automation, broker C#, OCR ni visión.
 
 Funciona ahora:
@@ -34,7 +34,7 @@ Funciona ahora:
 - micrófono/altavoces WASAPI, hotkey global, estados explícitos y semidúplex;
 - `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
 - `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
-- Chatterbox LatAm aislado/offline para la voz propia, bloqueado por consentimiento.
+- Chatterbox LatAm aislado/offline para la voz propia, ligado a consentimiento.
 - centro de control web en loopback con catálogo cerrado y un único acceso directo.
 
 El benchmark reproducible obtuvo 0,688 s de TTFT mediano, 54,85 tokens/s, 3/3
@@ -141,8 +141,8 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 
 En voz, mantén `Ctrl+Alt+J` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
 turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confirma
-acciones sensibles. Chatterbox está seleccionado y fallará cerrado mientras no
-existan la muestra y su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
+acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
+muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
 
 ## Configuración de modelos
 

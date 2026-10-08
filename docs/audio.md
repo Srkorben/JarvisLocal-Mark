@@ -53,13 +53,18 @@ kernel CPU ya iniciado. La transcripción ambigua o silenciosa no llega al núcl
 
 Por preferencia explícita del usuario, Piper no es la voz activa. Se conserva como
 backend técnico de respaldo, pero `config/jarvis.toml` selecciona `chatterbox` y
-fallará cerrado hasta completar el enrolamiento.
+falla cerrado si la muestra o el consentimiento no son válidos.
 
 Chatterbox se aisló en `.venv-chatterbox`: su stack fija NumPy 1.x/PyTorch y no
 debe contaminar el núcleo. Un worker JSONL local carga el modelo una vez, devuelve
 PCM y no expone puertos. Cancelar una síntesis termina el worker; el turno
 siguiente puede iniciarlo de nuevo. Usa CPU por defecto porque Qwen3-8B ya ocupa
 la mayor parte de los 8 GB de VRAM.
+
+El PCM16 viaja codificado en base64 en una única respuesta JSONL. El lector IPC
+usa un límite explícito de 32 MiB y rechaza PCM mayor de 24 MiB o de longitud
+inválida. Esto evita el límite predeterminado de 64 KiB de `StreamReader`, que
+interrumpía incluso frases breves, sin convertir el canal en memoria ilimitada.
 
 Artefactos instalados:
 
@@ -73,6 +78,8 @@ Artefactos instalados:
 - código y modelos publicados como MIT; audio generado incorpora la marca de agua
   PerTh del proyecto;
 - worker comprobado completamente offline; carga inicial observada ~50 s en CPU.
+- smoke real con la muestra consentida: 56.640 muestras a 24 kHz, 2,36 s de
+  audio, pico PCM 5.467 y 115,94 s desde arranque frío.
 
 Instalación reproducible:
 
@@ -134,5 +141,5 @@ Resultado completo: [benchmark de Fase 2](../benchmarks/results/audio-phase2.md)
 - no hay eco acústico avanzado, full-duplex ni barge-in natural;
 - una voz clonada puede sonar similar, pero no constituye identidad, autenticación
   ni autorización;
-- falta una prueba humana con la voz real antes de declarar aceptada la Fase 2.
+- falta escuchar y evaluar semejanza/naturalidad antes de declarar aceptada la Fase 2.
 

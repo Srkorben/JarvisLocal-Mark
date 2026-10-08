@@ -292,6 +292,10 @@ class ChatterboxProviderTests(IsolatedAsyncioTestCase):
             self.assertEqual(audio.sample_rate, 24000)
             self.assertEqual(audio.samples.tolist(), [10, -10, 20, -20])
 
+            large_audio = await provider.synthesize("large", CancellationToken())
+            self.assertEqual(large_audio.samples.size, 40_000)
+            self.assertEqual(large_audio.samples[0], 10)
+
             token = CancellationToken()
             task = asyncio.create_task(provider.synthesize("slow", token))
             await asyncio.sleep(0.1)
@@ -390,6 +394,20 @@ class VoiceSessionTests(IsolatedAsyncioTestCase):
             self.assertEqual(result.outcome, "error")
             self.assertIn(VoiceState.ERROR, states)
             self.assertEqual(manager.state, VoiceState.IDLE)
+
+    async def test_voice_error_callback_exposes_the_real_stage_failure(self) -> None:
+        with TemporaryDirectory() as directory:
+            errors: list[str] = []
+            _, _, manager, states = self.build(
+                Path(directory), player=FakePlayer(fail=True)
+            )
+            manager.on_error = errors.append
+            await manager.start_recording()
+            result = await (await manager.finish_recording())
+
+            self.assertEqual(result.outcome, "error")
+            self.assertIn(VoiceState.ERROR, states)
+            self.assertEqual(errors, [result.error])
 
     async def test_cancellation_during_recording_transcription_generation_and_playback(self) -> None:
         with TemporaryDirectory() as directory:

@@ -66,27 +66,33 @@ def make_test_tool(root: Path, tool_id: str = "test", *, confirmation: bool = Fa
 
 class CatalogTests(TestCase):
     def test_catalog_exactly_reconstructs_nine_project_shortcuts(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        catalog = build_tool_catalog(root)
-        self.assertEqual(len(catalog), 9)
-        self.assertEqual(
-            {item.source for item in catalog.values()},
-            {
-                "JarvisLocal - Abrir proyecto.lnk",
-                "JarvisLocal - Chat de texto.lnk",
-                "JarvisLocal - Configuración.lnk",
-                "JarvisLocal - Conversación por voz.lnk",
-                "JarvisLocal - Diagnóstico.lnk",
-                "JarvisLocal - Enrolar mi voz.lnk",
-                "JarvisLocal - Instalar o reparar.lnk",
-                "JarvisLocal - Preparar clonación de voz.lnk",
-                "JarvisLocal - Preparar modelos de audio.lnk",
-            },
-        )
-        for item in catalog.values():
-            self.assertEqual(item.working_directory, root)
-            self.assertTrue(item.target.is_file())
-        self.assertIn("Muestra de voz propia enrolada", catalog["voice"].missing_requirements())
+        # El catálogo se valida contra una raíz sintética: la prueba no debe
+        # cambiar de resultado cuando el usuario enrola o elimina su voz real.
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            catalog = build_tool_catalog(root)
+            self.assertEqual(len(catalog), 9)
+            self.assertEqual(
+                {item.source for item in catalog.values()},
+                {
+                    "JarvisLocal - Abrir proyecto.lnk",
+                    "JarvisLocal - Chat de texto.lnk",
+                    "JarvisLocal - Configuración.lnk",
+                    "JarvisLocal - Conversación por voz.lnk",
+                    "JarvisLocal - Diagnóstico.lnk",
+                    "JarvisLocal - Enrolar mi voz.lnk",
+                    "JarvisLocal - Instalar o reparar.lnk",
+                    "JarvisLocal - Preparar clonación de voz.lnk",
+                    "JarvisLocal - Preparar modelos de audio.lnk",
+                },
+            )
+            for item in catalog.values():
+                self.assertEqual(item.working_directory, root)
+                self.assertTrue(item.target.is_file())
+            self.assertIn(
+                "Muestra de voz propia enrolada",
+                catalog["voice"].missing_requirements(),
+            )
 
 
 class ProcessManagerTests(TestCase):

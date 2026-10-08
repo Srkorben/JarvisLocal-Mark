@@ -59,6 +59,7 @@ class VoiceSessionManager:
         on_state: StateCallback | None = None,
         on_transcript: TextCallback | None = None,
         on_text_delta: TextCallback | None = None,
+        on_error: TextCallback | None = None,
     ) -> None:
         self.database = database
         self.orchestrator = orchestrator
@@ -76,6 +77,7 @@ class VoiceSessionManager:
         self.on_state = on_state
         self.on_transcript = on_transcript
         self.on_text_delta = on_text_delta
+        self.on_error = on_error
         self._state = VoiceState.IDLE
         self._lock = asyncio.Lock()
         self._token: CancellationToken | None = None
@@ -290,6 +292,8 @@ class VoiceSessionManager:
         result = VoiceTurnResult(outcome=outcome, error=str(exc), metrics=metrics)
         self.last_result = result
         self._audit(outcome, error=exc, metrics=metrics)
+        if self.on_error is not None:
+            self.on_error(str(exc))
         self._transition(VoiceState.IDLE)
         return result
 
