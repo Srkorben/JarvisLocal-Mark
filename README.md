@@ -77,6 +77,12 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
 
 ## Uso y verificación
 
+Los accesos directos del Escritorio pueden regenerarse sin ejecutar Jarvis:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Create-DesktopShortcuts.ps1
+```
+
 ```powershell
 # Conversación interactiva; inicia y detiene llama-server automáticamente
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
