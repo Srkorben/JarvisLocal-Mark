@@ -1,0 +1,74 @@
+[
+  {
+    "name": "JarvisLocal - Abrir proyecto.lnk",
+    "target": "C:\\Windows\\explorer.exe",
+    "arguments": "\"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Abrir la carpeta del proyecto JarvisLocal.",
+    "icon": "C:\\WINDOWS\\explorer.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Chat de texto.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Run-Jarvis.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Abrir la conversación textual local.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Configuración.lnk",
+    "target": "C:\\Windows\\System32\\notepad.exe",
+    "arguments": "\"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\config\\jarvis.toml\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Abrir la configuración local validada.",
+    "icon": "C:\\WINDOWS\\System32\\notepad.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Conversación por voz.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Run-Jarvis-Voice.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Iniciar voz local con push-to-talk.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Diagnóstico.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Diagnose-Jarvis.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Comprobar núcleo, auditoría, audio y modelos.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Enrolar mi voz.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Enroll-OwnVoice.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Grabar conscientemente la muestra de voz propia.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Instalar o reparar.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Setup.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Recrear y validar las dependencias del núcleo.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Preparar clonación de voz.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Setup-VoiceClone.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Instalar o comprobar Chatterbox LatAm aislado.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  },
+  {
+    "name": "JarvisLocal - Preparar modelos de audio.lnk",
+    "target": "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
+    "arguments": "-NoExit -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal\\scripts\\Setup-AudioModels.ps1\"",
+    "working_directory": "C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal",
+    "description": "Descargar o comprobar los modelos de audio.",
+    "icon": "C:\\Program Files\\PowerShell\\7\\pwsh.exe,0"
+  }
+]

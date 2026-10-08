@@ -35,6 +35,7 @@ Funciona ahora:
 - `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
 - `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
 - Chatterbox LatAm aislado/offline para la voz propia, bloqueado por consentimiento.
+- centro de control web en loopback con catálogo cerrado y un único acceso directo.
 
 El benchmark reproducible obtuvo 0,688 s de TTFT mediano, 54,85 tokens/s, 3/3
 casos de tool calling y cancelación en 94 ms. Son medidas de esta máquina y no una
@@ -77,10 +78,13 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
 
 ## Uso y verificación
 
-Los accesos directos del Escritorio pueden regenerarse sin ejecutar Jarvis:
+El Escritorio utiliza un único acceso `JarvisLocal.lnk`. El centro también puede
+iniciarse, consultarse o detenerse desde consola:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Create-DesktopShortcuts.ps1
+.\.venv\Scripts\python.exe -m jarvis_local.control_center --launch
+.\.venv\Scripts\python.exe -m jarvis_local.control_center --status
+.\.venv\Scripts\python.exe -m jarvis_local.control_center --stop
 ```
 
 ```powershell
@@ -204,4 +208,6 @@ Consulta [SECURITY.md](SECURITY.md) antes de añadir una capacidad y
 [docs/rag.md](docs/rag.md) para operar memoria documental. Revisa
 [la evaluación de patrones de CORE](docs/core-evaluation.md),
 [docs/tools.md](docs/tools.md) para acciones de Windows y
-[docs/roadmap.md](docs/roadmap.md) antes de ampliar el alcance.
+[docs/roadmap.md](docs/roadmap.md) antes de ampliar el alcance. La auditoría,
+operación y recuperación del acceso único están en
+[docs/control-center.md](docs/control-center.md).

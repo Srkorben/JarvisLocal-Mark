@@ -8,16 +8,32 @@
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 87 pruebas + E2E; falta enrolar/evaluar voz propia |
+| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 94 pruebas + E2E; falta enrolar/evaluar voz propia |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
-| 5 — Acceso permanente | Pendiente | no iniciado |
+| 5 — Acceso permanente | **Parcial** | centro web/shortcut listo; faltan bandeja, wake word e inicio de sesión |
 | 6 — Automatización estructurada | Pendiente | no iniciado |
 | 7 — Visión y tareas multietapa | Pendiente/experimental | no iniciado |
 | 8 — Endurecimiento | Continuo | controles base presentes; falta endurecimiento integral |
 
 Incremento posterior a Fase 4: **evaluación de CORE y decisiones temporales,
 completado**. No constituye una fase nueva y no cambia la prioridad de voz PTT.
+
+Incremento de acceso: **centro de control web local completado**. Consolida nueve
+accesos JarvisLocal sin modificar los tres accesos ajenos detectados.
+
+## Centro de control local
+
+- servidor de biblioteca estándar ligado exclusivamente a `127.0.0.1`;
+- puerto preferido 8765 con fallback cerrado 8766–8774;
+- inicio bajo demanda, health check y bloqueo de segunda instancia;
+- catálogo cerrado de nueve herramientas, sin comandos/argumentos desde HTTP;
+- cookie HttpOnly/SameSite, token aleatorio, CSRF, Host/Origin y CSP;
+- procesos con `shell=False`, grupos de exclusión, cooldown y detención del árbol;
+- confirmación local para enrolamiento e instalación/mantenimiento;
+- estados disponible/en ejecución/no disponible/error;
+- icono oscuro personalizado y respaldo recuperable de `.lnk` sustituidos;
+- ADR 0012 y operación en `docs/control-center.md`.
 
 ## Fase 2 implementada
 
@@ -128,7 +144,7 @@ privilegios. El modelo no puede cambiar permisos.
 ## Validación ejecutada
 
 ```text
-python -m pytest -q                         87/87 OK (+3 subtests)
+python -m pytest -q                         94/94 OK (+3 subtests)
 python -m compileall -q src tests           OK
 python -m jarvis_local.cli --doctor         OK
 python -m jarvis_local.cli --verify-audit   OK
@@ -147,6 +163,9 @@ hardware WASAPI micrófono/altavoz            OK; entrada fue silencio
 Piper→Whisper→LLM→tool→TTS                   OK, sin reproducción en benchmark final
 worker Chatterbox LatAm CPU/offline          OK, carga ~50 s
 voz clonada del usuario                      PENDIENTE de muestra/aceptación
+control_center unit/API security             7/7 OK
+control_center smoke HTTP/Windows            9 tools; open/start/stop OK
+segunda apertura del centro                  mismo PID/puerto, sin duplicado
 ```
 
 La suite cubre: cambio de proveedor, proveedor indisponible, respuesta normal,

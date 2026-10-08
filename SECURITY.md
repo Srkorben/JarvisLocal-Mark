@@ -133,3 +133,18 @@ movimiento revierte si se cancela durante la operación. El botón de bandeja si
 siendo trabajo de Fase 5.
 
 Consulta el análisis completo en [docs/threat-model.md](docs/threat-model.md).
+
+## Centro de control web
+
+El centro de control escucha solo en `127.0.0.1` y escoge entre los puertos
+8765–8774. No se enlaza a `0.0.0.0`, IPv6 global ni LAN. Usa un token aleatorio por
+proceso, cookie HttpOnly/SameSite, comprobaciones Host/Origin, CSRF, CSP, límite de
+cuerpo y `no-store`. El archivo de endpoint recibe ACL de la cuenta local. Queries,
+cookies y tokens se omiten de logs.
+
+La API no es un shell: únicamente acepta un identificador presente en el catálogo
+compilado y el booleano `confirmed`. Ejecutable, argumentos y working directory
+proceden de `ToolSpec` revisados y se lanzan con `shell=False`. Una página, modelo,
+documento o petición HTTP no puede añadir herramientas. Mantenimiento y
+enrolamiento exigen confirmación en la interfaz; grupos de exclusión impiden que
+modelos, audio o instaladores incompatibles compitan entre sí.

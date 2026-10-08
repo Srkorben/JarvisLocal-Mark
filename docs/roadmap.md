@@ -10,7 +10,7 @@ baja, media, alta o experimental.
 | 2 — Voz PTT | WASAPI, VAD, STT/TTS sustituibles, hotkey y corte de audio | sounddevice, Silero integrado, faster-whisper, Chatterbox/Piper | media-alta; drivers, calidad y latencia | **infraestructura completa; aceptación de voz propia pendiente** |
 | 3 — Memoria/RAG | proyectos, indexador, FTS5, vectores, citas y diario semántico | SQLite FTS5, Qwen3-Embedding-0.6B; ANN solo si escala | alta; mezcla de proyectos e inyección | respuestas con evidencia trazable; **completa** |
 | 4 — Herramientas deterministas | 10 herramientas de búsqueda, apertura, Git y archivos | APIs Python/Win32, Git, ShellExecute | media; TOCTOU y rollback | operaciones verificadas sin mouse; **completa con escritura deny-by-default** |
-| 5 — Acceso permanente | bandeja, inicio opcional, PTT, wake word, indicadores y emergencia | .NET/WinUI o tray local, openWakeWord | media-alta; privacidad del micrófono | disponibilidad visible en segundo plano |
+| 5 — Acceso permanente | centro web local completo; faltan bandeja, inicio opcional, wake word e indicadores | biblioteca estándar; futuro tray/openWakeWord | media-alta; privacidad y lifecycle | **parcial: acceso único y servicio bajo demanda validados** |
 | 6 — Automatización estructurada | broker, pipe, DOM/UIA y verificador para 1–2 apps | .NET 8, named pipes, FlaUI/UIA3, Playwright | alta; foco, DPI, diálogos | flujos conocidos con ≥95 % de éxito |
 | 7 — Visión/multietapa | captura, OCR, VLM bajo demanda y bucle observar-actuar | Windows.Graphics.Capture, PaddleOCR, Qwen3-VL-4B | experimental; grounding y VRAM | respaldo visual estrictamente limitado |
 | 8 — Endurecimiento | rollback, cifrado, aislamiento, métricas, adversarial/concurrencia | DPAPI/Credential Manager, ACL/AppContainer | alta y continua | uso cotidiano controlado |
@@ -36,7 +36,8 @@ smoke test de archivos/Git y tool call real del LLM. Escritura, apertura y
 ejecución permanecen denegadas por proyecto hasta habilitación explícita. La
 evaluación de CORE sólo añadió decisiones temporales en SQLite; tareas, reglas,
 MCP y eventos continúan diferidos. La prioridad inmediata es enrolar y validar la
-voz propia para cerrar Fase 2; no se autoriza browser, UIA, broker o visión.
+voz propia para cerrar Fase 2. El centro web local no incorpora automatización de
+navegador; Playwright, UIA, broker y visión continúan fuera de alcance.
 
 ## Clasificación de expectativas
 
