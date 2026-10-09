@@ -13,6 +13,7 @@ VOICE_STATES = frozenset(
     {
         "offline",
         "loading",
+        "queued",
         "idle",
         "recording",
         "transcribing",
@@ -139,6 +140,39 @@ class VoicePresenceClient:
     def close(self) -> None:
         self.state = "offline"
         self._publish()
+
+    def fetch_text_request(self, *, wait_seconds: float = 5.0) -> dict[str, Any] | None:
+        """Obtiene una solicitud escrita efímera desde el panel autenticado."""
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=max(1.0, wait_seconds + 1.0)
+        )
+        try:
+            connection.request(
+                "GET",
+                f"/api/chat/next?wait={max(0.0, min(wait_seconds, 10.0)):g}",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            request = payload.get("request") if response.status == 200 else None
+            if not isinstance(request, dict):
+                return None
+            request_id = request.get("id")
+            text = request.get("text")
+            speak = request.get("speak")
+            if (
+                not isinstance(request_id, str)
+                or not isinstance(text, str)
+                or not text.strip()
+                or not isinstance(speak, bool)
+            ):
+                return None
+            return {"id": request_id, "text": text, "speak": speak}
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        finally:
+            connection.close()
 
     def _publish(self) -> None:
         payload = json.dumps(

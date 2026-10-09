@@ -23,6 +23,7 @@ from .catalog import build_tool_catalog
 from .modules import build_module_snapshot
 from .runtime import ProcessManager
 from .server import ControlCenterHTTPServer
+from .text_chat import TextChatRequestStore
 from .voice_import import VoiceReferenceImporter
 
 
@@ -112,6 +113,7 @@ def serve() -> int:
         csrf_token = secrets.token_urlsafe(32)
         catalog = build_tool_catalog(root)
         manager = ProcessManager(catalog)
+        text_chat = TextChatRequestStore()
         settings = Settings.load(root / "config" / "jarvis.toml")
         database = Database(settings.database_path)
         project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
@@ -134,6 +136,7 @@ def serve() -> int:
             icon,
             root,
             voice_importer=voice_importer.import_base64,
+            text_chat=text_chat,
         )
         endpoint = {
             "pid": os.getpid(),
@@ -147,6 +150,7 @@ def serve() -> int:
         try:
             server.serve_forever(poll_interval=0.25)
         finally:
+            text_chat.close()
             manager.stop_all()
             server.server_close()
             current = read_endpoint(root)
@@ -182,6 +186,7 @@ def _bind_available_server(
     icon: Path,
     root: Path | None = None,
     voice_importer=None,
+    text_chat: TextChatRequestStore | None = None,
 ) -> ControlCenterHTTPServer:
     project = root or project_root()
     last_error: OSError | None = None
@@ -195,6 +200,7 @@ def _bind_available_server(
                 icon_path=icon,
                 module_snapshot=lambda: build_module_snapshot(project),
                 voice_importer=voice_importer,
+                text_chat=text_chat,
                 version="Mark Scout · Desktop Alpha",
             )
         except OSError as exc:

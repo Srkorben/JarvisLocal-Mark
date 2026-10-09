@@ -120,6 +120,19 @@ def confirm_action(request: ActionRequest, decision: PolicyDecision) -> Confirma
     )
 
 
+def deny_noninteractive_confirmation(
+    request: ActionRequest, decision: PolicyDecision
+) -> ConfirmationReceipt:
+    """La voz y el chat web no pueden autorizar acciones sensibles por texto."""
+
+    return ConfirmationReceipt(
+        approved=False,
+        source=ConfirmationSource.TRUSTED_LOCAL_UI,
+        request_id=request.request_id,
+        summary="No existe una confirmación interactiva confiable para este turno.",
+    )
+
+
 async def run_doctor(
     settings: Settings,
     database: Database,
@@ -656,7 +669,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         provider=provider,
         registry=registry,
         executor=executor,
-        approval_callback=confirm_action,
+        approval_callback=(deny_noninteractive_confirmation if args.voice else confirm_action),
     )
     session_id = database.create_session(project_id=project.id)
 
@@ -693,6 +706,8 @@ async def async_main(argv: list[str] | None = None) -> int:
                 print(f"\nTú (transcripción)> {text}", flush=True)
                 print(f"\n{settings.assistant_name}> ", end="", flush=True)
                 if presence is not None:
+                    presence.response = ""
+                    presence.error = ""
                     presence.set_transcript(text)
 
             def voice_delta(delta: str) -> None:
@@ -745,6 +760,13 @@ async def async_main(argv: list[str] | None = None) -> int:
                     manager,
                     ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
                     cancel=WindowsKeyChord.parse(settings.audio_cancel_hotkey),
+                    text_request_source=(
+                        None
+                        if presence is None
+                        else lambda: asyncio.to_thread(
+                            presence.fetch_text_request, wait_seconds=5.0
+                        )
+                    ),
                 )
             except Exception as exc:
                 if presence is not None:

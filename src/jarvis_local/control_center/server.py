@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .runtime import ControlCenterError, ProcessManager
 from .presence import PRESENCE_FIELDS, VoicePresenceStore
+from .text_chat import TextChatError, TextChatRequestStore
 from .voice_import import VoiceImportError
 from .web import render_dashboard
 
@@ -35,6 +36,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         csrf_token: str,
         icon_path: Path,
         presence: VoicePresenceStore | None = None,
+        text_chat: TextChatRequestStore | None = None,
         module_snapshot: Callable[[], dict[str, Any]] | None = None,
         voice_importer: Callable[..., dict[str, object]] | None = None,
         version: str = "local",
@@ -44,6 +46,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         self.csrf_token = csrf_token
         self.icon_path = icon_path
         self.presence = presence or VoicePresenceStore()
+        self.text_chat = text_chat or TextChatRequestStore()
         self.module_snapshot = module_snapshot
         self.voice_importer = voice_importer
         self.version = version
@@ -63,7 +66,8 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         # BaseHTTPRequestHandler incluye la query completa en su log por defecto.
         # La primera navegación transporta un token de un solo origen, por lo que
         # registramos únicamente método y ruta normalizada, nunca query/cookies.
-        LOGGER.info(
+        log = LOGGER.debug if urlsplit(self.path).path == "/api/chat/next" else LOGGER.info
+        log(
             "http client=%s method=%s path=%s",
             self.client_address[0],
             self.command,
@@ -94,7 +98,11 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        api_bearer = parsed.path in {"/api/voice/presence", "/api/modules"} and self._bearer_authenticated()
+        api_bearer = parsed.path in {
+            "/api/voice/presence",
+            "/api/modules",
+            "/api/chat/next",
+        } and self._bearer_authenticated()
         if not self._authenticated() and not api_bearer:
             self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Abre el panel desde el acceso directo local.")
             return
@@ -117,6 +125,18 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/voice/presence":
             self._json(HTTPStatus.OK, {"presence": self.server.presence.snapshot()})
+            return
+        if parsed.path == "/api/chat/next":
+            try:
+                raw_wait = parse_qs(parsed.query).get("wait", ["5"])[0]
+                wait_seconds = max(0.0, min(float(raw_wait), 10.0))
+            except (TypeError, ValueError):
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_wait", "Espera inválida.")
+                return
+            self._json(
+                HTTPStatus.OK,
+                {"request": self.server.text_chat.take(wait_seconds=wait_seconds)},
+            )
             return
         if parsed.path == "/api/modules":
             if self.server.module_snapshot is None:
@@ -170,6 +190,48 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self.headers.get("X-CSRF-Token", ""), self.server.csrf_token
         ):
             self._json_error(HTTPStatus.FORBIDDEN, "csrf_rejected", "Solicitud local no confiable.")
+            return
+        if parsed.path == "/api/chat":
+            try:
+                payload = self._read_json(
+                    allowed_fields=frozenset({"text", "speak"}),
+                    max_body_bytes=16_384,
+                )
+                text = payload.get("text")
+                speak = payload.get("speak", True)
+                request = self.server.text_chat.submit(text, speak)
+                try:
+                    runtime = self.server.manager.start("voice")
+                except Exception:
+                    self.server.text_chat.discard(request["id"])
+                    raise
+                self.server.presence.update(
+                    {
+                        "state": "queued",
+                        "transcript": request["text"],
+                        "response": "",
+                        "error": "",
+                    }
+                )
+            except TextChatError as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": exc.as_dict()})
+                return
+            except ControlCenterError as exc:
+                self._json(exc.http_status, {"error": exc.as_dict()})
+                return
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                return
+            self._json(
+                HTTPStatus.ACCEPTED,
+                {
+                    "result": {
+                        "outcome": "queued",
+                        "request_id": request["id"],
+                        "runtime": runtime["outcome"],
+                    }
+                },
+            )
             return
         if parsed.path == "/api/voice/reference/import":
             if self.server.voice_importer is None:
