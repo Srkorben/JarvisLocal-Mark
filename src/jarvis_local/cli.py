@@ -22,6 +22,7 @@ from .models import (
     ConfirmationSource,
     PolicyDecision,
 )
+from .latency import default_latency_log
 from .orchestrator import Orchestrator
 from .policy import PolicyEngine
 from .projects import ProjectService
@@ -670,6 +671,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         registry=registry,
         executor=executor,
         approval_callback=(deny_noninteractive_confirmation if args.voice else confirm_action),
+        latency_log=default_latency_log(settings.data_dir),
     )
     session_id = database.create_session(project_id=project.id)
 
