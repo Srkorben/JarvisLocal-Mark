@@ -54,6 +54,7 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
     voice_reference = root / "data" / "voices" / "user" / "reference.wav"
     voice_consent = root / "data" / "voices" / "user" / "consent.json"
     clone_model = root / "models" / "chatterbox-es-latam" / "t3_es_mx_latam.safetensors"
+    clone_decoder = root / "models" / "chatterbox-es-latam" / "s3gen_v3.pt"
     whisper_model = root / "models" / "faster-whisper-small" / "model.bin"
 
     program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
@@ -115,6 +116,7 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
         Requirement(whisper_model, "Modelo faster-whisper-small"),
         Requirement(clone_python, "Entorno aislado Chatterbox"),
         Requirement(clone_model, "Modelo Chatterbox LatAm"),
+        Requirement(clone_decoder, "Decodificador S3Gen V3 (Preparar clonación de voz)"),
         Requirement(voice_reference, "Muestra de voz propia enrolada"),
         Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
     )

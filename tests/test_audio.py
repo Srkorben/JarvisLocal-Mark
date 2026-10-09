@@ -277,6 +277,67 @@ class ChatterboxProviderTests(IsolatedAsyncioTestCase):
             self.assertEqual(Path(command[0]), cuda_python)
             self.assertEqual(command[command.index("--device") + 1], "cuda")
 
+    async def test_worker_command_carries_persistent_pronunciation_profile(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            settings = make_settings(
+                root,
+                tts_provider="chatterbox",
+                tts_clone_python=root / "python.exe",
+                tts_clone_model_path=root / "model",
+                tts_clone_reference_path=root / "reference.wav",
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_accent_source="model",
+                tts_clone_seed=77,
+            )
+            command = ChatterboxTTSProvider(settings)._command()
+
+            def value(flag: str) -> str:
+                return command[command.index(flag) + 1]
+
+            self.assertEqual(value("--s3gen-file"), "s3gen_v3.pt")
+            self.assertEqual(value("--accent-source"), "model")
+            self.assertEqual(value("--reference-processing"), "clean")
+            self.assertEqual(value("--seed"), "77")
+
+    async def test_provider_requires_the_configured_v3_decoder(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            python.touch()
+            for name in (
+                "ve.pt",
+                "s3gen.pt",
+                "grapheme_mtl_merged_expanded_v1.json",
+                "t3_es_mx_latam.safetensors",
+                "pkuseg/spacy_ontonotes/features.msgpack",
+                "pkuseg/spacy_ontonotes/weights.npz",
+            ):
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).touch()
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"own voice fixture")
+            create_own_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=12.0,
+            )
+            settings = make_settings(
+                root,
+                tts_provider="chatterbox",
+                tts_clone_python=python,
+                tts_clone_model_path=root,
+                tts_clone_reference_path=reference,
+                tts_clone_consent_path=consent,
+            )
+            with self.assertRaises(AudioError) as caught:
+                ChatterboxTTSProvider(settings)._validate_files()
+            self.assertEqual(caught.exception.code, "clone_model_missing")
+            self.assertIn("s3gen_v3.pt", str(caught.exception))
+            (root / "s3gen_v3.pt").touch()
+            ChatterboxTTSProvider(settings)._validate_files()
+
     async def test_provider_fails_closed_without_offline_tokenizer_artifacts(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

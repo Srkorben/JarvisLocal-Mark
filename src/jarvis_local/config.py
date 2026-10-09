@@ -82,12 +82,16 @@ class Settings(BaseModel):
     tts_clone_python: Path | None = None
     tts_clone_model_path: Path | None = None
     tts_clone_model_file: str = "t3_es_mx_latam.safetensors"
+    tts_clone_s3gen_file: str = "s3gen_v3.pt"
+    tts_clone_accent_source: str = "reference"
+    tts_clone_reference_processing: str = "clean"
+    tts_clone_seed: int = Field(default=1234, ge=0, le=2_147_483_647)
     tts_clone_reference_path: Path | None = None
     tts_clone_consent_path: Path | None = None
     tts_clone_device: str = "cpu"
     tts_clone_timeout_seconds: float = Field(default=180, gt=0, le=900)
     tts_clone_exaggeration: float = Field(default=0.5, ge=0.25, le=2.0)
-    tts_clone_cfg_weight: float = Field(default=0.4, ge=0.0, le=1.0)
+    tts_clone_cfg_weight: float = Field(default=0.5, ge=0.0, le=1.0)
     tts_clone_temperature: float = Field(default=0.8, ge=0.05, le=2.0)
     data_dir: Path
     database_path: Path
@@ -164,6 +168,35 @@ class Settings(BaseModel):
         if candidate.name != value or candidate.suffix.casefold() != ".safetensors":
             raise ValueError("voice_clone.model_file debe ser un nombre .safetensors.")
         return value
+
+    @field_validator("tts_clone_s3gen_file")
+    @classmethod
+    def safe_clone_s3gen_file(cls, value: str) -> str:
+        candidate = Path(value)
+        if (
+            "/" in value
+            or "\\" in value
+            or candidate.name != value
+            or candidate.suffix.casefold() != ".pt"
+        ):
+            raise ValueError("voice_clone.s3gen_file debe ser un nombre de archivo .pt.")
+        return value
+
+    @field_validator("tts_clone_accent_source")
+    @classmethod
+    def supported_accent_source(cls, value: str) -> str:
+        normalized = value.casefold().strip()
+        if normalized not in {"reference", "model"}:
+            raise ValueError("voice_clone.accent_source debe ser 'reference' o 'model'.")
+        return normalized
+
+    @field_validator("tts_clone_reference_processing")
+    @classmethod
+    def supported_reference_processing(cls, value: str) -> str:
+        normalized = value.casefold().strip()
+        if normalized not in {"raw", "clean"}:
+            raise ValueError("voice_clone.reference_processing debe ser 'raw' o 'clean'.")
+        return normalized
 
     @field_validator("llama_gpu_layers", "embedding_gpu_layers")
     @classmethod
@@ -353,6 +386,12 @@ class Settings(BaseModel):
                 project_dir,
                 voice_clone.get("consent_path", "data/voices/user/consent.json"),
             ),
+            tts_clone_s3gen_file=str(voice_clone.get("s3gen_file", "s3gen_v3.pt")),
+            tts_clone_accent_source=str(voice_clone.get("accent_source", "reference")),
+            tts_clone_reference_processing=str(
+                voice_clone.get("reference_processing", "clean")
+            ),
+            tts_clone_seed=int(voice_clone.get("seed", 1234)),
             tts_clone_device=str(voice_clone.get("device", "cpu")),
             tts_clone_timeout_seconds=float(
                 voice_clone.get("timeout_seconds", 180)
@@ -360,7 +399,7 @@ class Settings(BaseModel):
             tts_clone_exaggeration=float(
                 voice_clone.get("exaggeration", 0.5)
             ),
-            tts_clone_cfg_weight=float(voice_clone.get("cfg_weight", 0.4)),
+            tts_clone_cfg_weight=float(voice_clone.get("cfg_weight", 0.5)),
             tts_clone_temperature=float(voice_clone.get("temperature", 0.8)),
             data_dir=data_dir.resolve(),
             database_path=database_path.resolve(),

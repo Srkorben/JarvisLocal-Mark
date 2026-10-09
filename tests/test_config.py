@@ -24,6 +24,42 @@ class ConfigTests(TestCase):
             with self.assertRaises(ValidationError):
                 make_settings(Path(directory), model_provider="unknown")
 
+    def test_rejects_unsupported_voice_pronunciation_options(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for field, value in (
+                ("tts_clone_accent_source", "chileno"),
+                ("tts_clone_reference_processing", "denoise"),
+                ("tts_clone_s3gen_file", "..\\s3gen_v3.pt"),
+                ("tts_clone_s3gen_file", "s3gen_v3.bin"),
+                ("tts_clone_seed", -1),
+            ):
+                with self.subTest(field=field, value=value):
+                    with self.assertRaises(ValidationError):
+                        make_settings(root, **{field: value})
+
+    def test_voice_pronunciation_profile_is_loaded_from_toml(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "config" / "jarvis.toml"
+            config.parent.mkdir()
+            config.write_text(
+                "[security]\n"
+                f"allowed_roots = ['{root.as_posix()}']\n"
+                "allowed_tools = ['get_current_time']\n"
+                "[voice_clone]\n"
+                "s3gen_file = 's3gen_v3.pt'\n"
+                "accent_source = 'Model'\n"
+                "reference_processing = 'clean'\n"
+                "seed = 42\n",
+                encoding="utf-8",
+            )
+            settings = Settings.load(config)
+            self.assertEqual(settings.tts_clone_s3gen_file, "s3gen_v3.pt")
+            self.assertEqual(settings.tts_clone_accent_source, "model")
+            self.assertEqual(settings.tts_clone_reference_processing, "clean")
+            self.assertEqual(settings.tts_clone_seed, 42)
+
     def test_accepts_adaptive_gpu_offload(self) -> None:
         with TemporaryDirectory() as directory:
             settings = make_settings(Path(directory), llama_gpu_layers="auto")
