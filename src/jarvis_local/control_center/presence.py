@@ -85,6 +85,16 @@ class VoicePresenceClient:
         self.response = ""
         self.error = ""
         self._last_delta_publish = 0.0
+        # La publicación es telemetría visual: se delega a un hilo para que una
+        # UI lenta nunca bloquee el bucle de voz (hotkeys, cancelación, TTS).
+        # Solo importa el estado más reciente, así que los intermedios se
+        # sustituyen en lugar de encolarse.
+        self._outbox: bytes | None = None
+        self._outbox_condition = threading.Condition()
+        self._sender: threading.Thread | None = None
+        self._closing = False
+        self._queued = 0
+        self._delivered = 0
 
     @classmethod
     def discover(cls, project_root: Path) -> "VoicePresenceClient | None":
@@ -137,9 +147,15 @@ class VoicePresenceClient:
         self.error = message[:2048]
         self._publish()
 
-    def close(self) -> None:
+    def close(self, *, flush_timeout: float = 1.0) -> None:
         self.state = "offline"
         self._publish()
+        with self._outbox_condition:
+            self._closing = True
+            self._outbox_condition.notify_all()
+            sender = self._sender
+        if sender is not None:
+            sender.join(timeout=flush_timeout)
 
     def fetch_text_request(self, *, wait_seconds: float = 5.0) -> dict[str, Any] | None:
         """Obtiene una solicitud escrita efímera desde el panel autenticado."""
@@ -168,14 +184,56 @@ class VoicePresenceClient:
                 or not isinstance(speak, bool)
             ):
                 return None
-            return {"id": request_id, "text": text, "speak": speak}
+            submitted_at = request.get("submitted_at")
+            result: dict[str, Any] = {"id": request_id, "text": text, "speak": speak}
+            if isinstance(submitted_at, str):
+                result["submitted_at"] = submitted_at
+            return result
         except (OSError, ValueError, json.JSONDecodeError):
             return None
         finally:
             connection.close()
 
     def _publish(self) -> None:
-        payload = json.dumps(
+        payload = self._payload()
+        # Los estados terminales se publican justo antes de que el proceso
+        # termine: se espera su entrega (acotada) para que la UI no los pierda.
+        terminal = self.state in {"error", "offline"}
+        with self._outbox_condition:
+            if self._closing and self._sender is None:
+                return
+            self._outbox = payload
+            self._queued += 1
+            generation = self._queued
+            if self._sender is None:
+                self._sender = threading.Thread(
+                    target=self._send_loop, name="mark-presence-publisher", daemon=True
+                )
+                self._sender.start()
+            self._outbox_condition.notify_all()
+            if terminal:
+                self._outbox_condition.wait_for(
+                    lambda: self._delivered >= generation,
+                    timeout=self.timeout_seconds + 0.5,
+                )
+
+    def _send_loop(self) -> None:
+        while True:
+            with self._outbox_condition:
+                while self._outbox is None and not self._closing:
+                    self._outbox_condition.wait()
+                payload = self._outbox
+                self._outbox = None
+                generation = self._queued
+                if payload is None:
+                    return
+            self._send(payload)
+            with self._outbox_condition:
+                self._delivered = generation
+                self._outbox_condition.notify_all()
+
+    def _payload(self) -> bytes:
+        return json.dumps(
             {
                 "state": self.state,
                 "transcript": self.transcript,
@@ -184,6 +242,8 @@ class VoicePresenceClient:
             },
             ensure_ascii=False,
         ).encode("utf-8")
+
+    def _send(self, payload: bytes) -> None:
         connection = http.client.HTTPConnection(
             "127.0.0.1", self.port, timeout=self.timeout_seconds
         )
