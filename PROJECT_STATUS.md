@@ -12,7 +12,7 @@ ejecutable hasta una migración separada.
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 106 pruebas + 3 subtests + E2E; muestra enrolada/importable y síntesis real, falta evaluar naturalidad |
+| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 108 pruebas + 3 subtests + E2E; Chatterbox CUDA fluido, falta evaluar naturalidad |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
 | 5 — Acceso permanente | **Parcial** | aplicación WPF/WebView2 y acceso `.exe`; faltan bandeja, wake word e inicio de sesión |
@@ -68,7 +68,8 @@ separados hasta completar sus pruebas.
 - transcripción visible, detección de silencio/ambigüedad y Unicode seguro;
 - mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
 - Piper validado como fallback; su voz fue rechazada por el usuario;
-- Chatterbox LatAm instalado en proceso/venv separado, CPU y offline;
+- Chatterbox LatAm instalado en proceso/venv separado, CUDA y offline;
+- reserva de VRAM en orden voz→LLM y priming CUDA antes de declarar estado listo;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
 - importación desde UI de audio autorizado de 15–30 s, ocho formatos, respaldo y auditoría;
 - transporte JSONL ampliado y acotado para el PCM16 base64 de Chatterbox;
@@ -169,13 +170,13 @@ privilegios. El modelo no puede cambiar permisos.
 ## Validación ejecutada
 
 ```text
-python -m pytest -q                         106/106 OK (+3 subtests)
+python -m pytest -q                         108/108 OK (+3 subtests)
 python -m compileall -q src tests           OK
 dotnet build JarvisLocal.Desktop Release    OK, 0 warnings / 0 errors
 Publish-Desktop.ps1                         OK, win-x64 framework-dependent
 python -m jarvis_local.cli --doctor         OK
 python -m jarvis_local.cli --verify-audit   OK
-python -m jarvis_local.cli --audio-doctor   OK; Chatterbox CPU/offline ~46,08 s
+python -m jarvis_local.cli --audio-doctor   OK; Chatterbox CUDA/offline 23,88 s
 chat real en español con llama-server       OK
 tool call real get_current_time             OK
 benchmark Qwen3-8B                          OK
@@ -187,9 +188,10 @@ LLM → find_files → política → auditoría      OK
 decisión A → corrección B → consulta         OK, vigente/anterior e historial 2
 olvido explícito → auditoría                 OK, 2 registros eliminados
 hardware WASAPI micrófono/altavoz            OK; entrada fue silencio
+Chatterbox CUDA → WASAPI físico              OK; TTS 3,562 s / audio 3,28 s
 Piper→Whisper→LLM→tool→TTS                   OK, sin reproducción en benchmark final
-worker Chatterbox LatAm CPU/offline          OK, carga ~46–50 s
-voz clonada del usuario                      PCM válido: 2,36 s; cold start 115,94 s
+worker Chatterbox LatAm CUDA/offline         OK, carga+priming 21,74–23,88 s
+voz clonada + Qwen residentes                OK; TTFT 0,515 s; TTS 5,681 s / audio 4,4 s
 control_center unit/API security             7/7 OK
 control_center smoke HTTP/Windows            9 tools; open/start/stop OK
 segunda apertura del centro                  mismo PID/puerto, sin duplicado
@@ -198,7 +200,7 @@ Godot ventana 3D real                        OK; ~168,23 MiB RAM, ~60 MiB VRAM o
 importación de voz sintética aislada         OK; normalización, rechazo, respaldo y auditoría
 acceso Mark Scout.lnk → aplicación WPF        OK; ventana Mark Scout, sin consola
 segunda apertura del `.exe`                 misma instancia/PID
-voz desde UI: loading → idle                  OK; ~50 s en carga fría observada
+voz desde UI: loading → idle                  OK; arranque integral y cierre limpio
 escena speaking + ondas + texto             OK, validación visual
 stop desde UI                               OK; sin worker de voz huérfano
 ```
@@ -240,10 +242,12 @@ consentimiento ligado a muestra, worker aislado y terminación de inferencia.
 | Total sin playback | 11,735 s |
 | RAM Python final | 705,32 MiB |
 
-El conjunto sintético no representa la voz real y evidencia errores en README,
-Git/Jarvis. Con la muestra consentida, Chatterbox produjo 2,36 s de PCM válido
-para una frase de prueba en 115,94 s desde arranque frío; falta evaluación humana
-de semejanza. Informe base: `benchmarks/results/audio-phase2.md`.
+El conjunto sintético no representa la voz real y evidencia errores en README y
+Git/Jarvis. Con la muestra consentida y CUDA, Chatterbox produjo 4,4 s de audio
+en 5,681 s con Qwen3-8B residente; el arranque de voz+priming tardó 21,739 s. La
+síntesis CPU anterior tardaba 42–54 s por frase. Falta evaluación humana de
+semejanza. Informes: `benchmarks/results/audio-phase2.md` y
+`benchmarks/results/chatterbox-cuda-rtx5060.md`.
 
 ## Benchmark validado
 
@@ -276,6 +280,8 @@ Informe completo: [benchmarks/results/qwen3-8b-q4_k_m-ctx8192.md](benchmarks/res
 - NVIDIA RTX 5060 Laptop detectada, 8151 MiB;
 - Ollama 0.40 conservado como proveedor opcional de desarrollo.
 - .NET 8 y WebView2 Runtime 154.0.4258.62 para `JarvisLocal.exe`.
+- PyTorch/torchaudio 2.9.1+cu128 aislados para Chatterbox; RTX 5060 `sm_120`
+  comprobada y entorno CPU anterior conservado como fallback.
 
 ## Benchmark RAG validado
 

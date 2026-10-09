@@ -260,6 +260,23 @@ class ChatterboxProviderTests(IsolatedAsyncioTestCase):
             settings = make_settings(Path(directory), tts_provider="chatterbox")
             self.assertIsInstance(create_tts_provider(settings), ChatterboxTTSProvider)
 
+    async def test_worker_command_uses_configured_cuda_environment(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            cuda_python = root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe"
+            settings = make_settings(
+                root,
+                tts_provider="chatterbox",
+                tts_clone_python=cuda_python,
+                tts_clone_model_path=root / "model",
+                tts_clone_reference_path=root / "reference.wav",
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_device="cuda",
+            )
+            command = ChatterboxTTSProvider(settings)._command()
+            self.assertEqual(Path(command[0]), cuda_python)
+            self.assertEqual(command[command.index("--device") + 1], "cuda")
+
     async def test_provider_fails_closed_without_offline_tokenizer_artifacts(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)

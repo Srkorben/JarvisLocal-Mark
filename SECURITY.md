@@ -62,7 +62,8 @@ acepta como autoridad.
 - audio de turnos no persistido y transcripción omitida de auditoría por defecto;
 - transcripción ambigua/silenciosa no llega al LLM ni a herramientas;
 - voz hablada nunca crea un `ConfirmationReceipt` ni concede permisos;
-- Chatterbox aislado sin puerto, en modo offline y CPU por defecto;
+- Chatterbox aislado sin puerto y en modo offline; CUDA solo acelera inferencia
+  local y no modifica autoridad, permisos ni confirmaciones;
 - clonación bloqueada sin muestra propia y consentimiento local ligado por SHA-256;
 - cancelación de Chatterbox termina su proceso en vez de fingir corte cooperativo.
 

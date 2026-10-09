@@ -50,7 +50,7 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
     scripts = root / "scripts"
     config = root / "config" / "jarvis.toml"
     core_python = root / ".venv" / "Scripts" / "python.exe"
-    clone_python = root / ".venv-chatterbox" / "Scripts" / "python.exe"
+    clone_python = root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe"
     voice_reference = root / "data" / "voices" / "user" / "reference.wav"
     voice_consent = root / "data" / "voices" / "user" / "consent.json"
     clone_model = root / "models" / "chatterbox-es-latam" / "t3_es_mx_latam.safetensors"

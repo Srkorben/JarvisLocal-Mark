@@ -605,10 +605,51 @@ async def async_main(argv: list[str] | None = None) -> int:
         await embeddings.aclose()
         return 0 if result.ok else 1
 
-    provider = await create_model_provider(
-        settings,
-        allow_start=args.start_model_server or settings.llama_auto_start,
-    )
+    # En voz CUDA, Chatterbox debe reservar su memoria antes de que
+    # llama-server calcule el offload automático. El orden inverso deja poca
+    # memoria contigua y provoca paginación WDDM, multiplicando la latencia TTS.
+    voice_stt = None
+    voice_tts = None
+    voice_presence = None
+    if args.voice:
+        from .audio import create_stt_provider, create_tts_provider
+        from .control_center.presence import VoicePresenceClient
+
+        voice_presence = VoicePresenceClient.discover(settings.project_dir)
+        print("Cargando STT y TTS locales…", flush=True)
+        if voice_presence is not None:
+            voice_presence.set_state("loading")
+        try:
+            voice_stt = create_stt_provider(settings)
+            voice_tts = create_tts_provider(settings)
+            await asyncio.gather(voice_stt.warmup(), voice_tts.warmup())
+        except BaseException as exc:
+            if voice_presence is not None:
+                voice_presence.set_error(str(exc))
+                voice_presence.set_state("error")
+            if voice_stt is not None:
+                await voice_stt.aclose()
+            if voice_tts is not None:
+                await voice_tts.aclose()
+            await embeddings.aclose()
+            raise
+
+    try:
+        provider = await create_model_provider(
+            settings,
+            allow_start=args.start_model_server or settings.llama_auto_start,
+        )
+    except BaseException as exc:
+        if voice_presence is not None:
+            voice_presence.set_error(str(exc))
+            voice_presence.set_state("error")
+            voice_presence.close()
+        if voice_stt is not None:
+            await voice_stt.aclose()
+        if voice_tts is not None:
+            await voice_tts.aclose()
+        await embeddings.aclose()
+        raise
     orchestrator = Orchestrator(
         settings=settings,
         database=database,
@@ -630,13 +671,9 @@ async def async_main(argv: list[str] | None = None) -> int:
                 VoiceSessionManager,
                 VoiceState,
                 WindowsKeyChord,
-                create_stt_provider,
-                create_tts_provider,
                 run_push_to_talk_loop,
             )
-            from .control_center.presence import VoicePresenceClient
-
-            presence = VoicePresenceClient.discover(settings.project_dir)
+            presence = voice_presence
 
             def voice_state(state: VoiceState) -> None:
                 labels = {
@@ -682,8 +719,8 @@ async def async_main(argv: list[str] | None = None) -> int:
                 cancellation=controller,
                 recorder=recorder,
                 player=player,
-                stt=create_stt_provider(settings),
-                tts=create_tts_provider(settings),
+                stt=voice_stt,
+                tts=voice_tts,
                 min_record_seconds=settings.audio_min_record_seconds,
                 min_rms=settings.audio_min_rms,
                 max_turn_seconds=settings.max_runtime_seconds,
@@ -693,11 +730,7 @@ async def async_main(argv: list[str] | None = None) -> int:
                 on_text_delta=voice_delta,
                 on_error=voice_error,
             )
-            print("Cargando STT y TTS locales…", flush=True)
-            if presence is not None:
-                presence.set_state("loading")
             try:
-                await manager.warmup()
                 if presence is not None:
                     # VoiceSessionManager nace en IDLE, por lo que no emite una
                     # transición hasta el primer turno. La interfaz gráfica sí

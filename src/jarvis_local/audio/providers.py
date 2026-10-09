@@ -298,8 +298,9 @@ class ChatterboxTTSProvider(TTSProvider):
     """Cliente de un worker aislado para clonación local de la voz propia.
 
     El proceso separado evita mezclar el stack PyTorch/NumPy de Chatterbox con
-    el núcleo y permite una cancelación dura de inferencia. Por defecto usa CPU
-    para no competir con Qwen3-8B por los 8 GB de VRAM.
+    el núcleo y permite una cancelación dura de inferencia. El dispositivo es
+    configurable; en CUDA debe cargarse antes de llama-server para que el
+    offload adaptativo del LLM respete la VRAM ya ocupada por la voz.
     """
 
     name = "chatterbox"

@@ -110,7 +110,8 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 
 ### Chatterbox para voz propia
 
-- entorno separado `.venv-chatterbox`, no dependencia del core;
+- entorno CUDA separado `.venv-chatterbox-cuda`, no dependencia del core;
+- entorno anterior `.venv-chatterbox` CPU conservado como fallback;
 - código commit `5de7a54aa4e5e2baadb0182dde554908b48b85c2`, MIT;
 - dependencia PerTh fijada en commit
   `ff1c8ac55a976971245cdd53c18d6131ca00d993`;
@@ -126,7 +127,11 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
   `c66c4517f11c2b35a56e28615c0689deb864cbc411e329552223bbd0a6a063f8`;
 - `spacy_ontonotes` fijado con SHA-256 oficial
   `b216e7f92de7ae285aeab8feba2faa8ea8216e5995ff6fb3d391cc8356db1bfe`;
-- PyTorch 2.6.0 CPU y NumPy 1.26.4 aislados;
+- PyTorch 2.9.1+cu128 y torchaudio 2.9.1+cu128, con `sm_120` comprobado en la
+  RTX 5060 Laptop; NumPy 1.26.4 aislado;
+- el metadato upstream de Chatterbox 0.1.7 aún fija PyTorch 2.6; se instala el
+  commit fijado con `--no-deps` y dependencias explícitas para evitar degradar al
+  wheel sin soporte Blackwell;
 - worker cargado offline; semejanza pendiente de la muestra del usuario.
 
 ### Normalización de referencias importadas

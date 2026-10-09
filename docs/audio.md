@@ -57,11 +57,17 @@ Por preferencia explícita del usuario, Piper no es la voz activa. Se conserva c
 backend técnico de respaldo, pero `config/jarvis.toml` selecciona `chatterbox` y
 falla cerrado si la muestra o el consentimiento no son válidos.
 
-Chatterbox se aisló en `.venv-chatterbox`: su stack fija NumPy 1.x/PyTorch y no
-debe contaminar el núcleo. Un worker JSONL local carga el modelo una vez, devuelve
-PCM y no expone puertos. Cancelar una síntesis termina el worker; el turno
-siguiente puede iniciarlo de nuevo. Usa CPU por defecto porque Qwen3-8B ya ocupa
-la mayor parte de los 8 GB de VRAM.
+Chatterbox se aisló en `.venv-chatterbox-cuda`: su stack fija NumPy 1.x y usa
+PyTorch 2.9.1+cu128, que incluye `sm_120` para la RTX 5060. No contamina el núcleo.
+Un worker JSONL local carga el modelo una vez, devuelve PCM y no expone puertos.
+Cancelar una síntesis termina el worker; el turno siguiente puede iniciarlo de
+nuevo. El entorno `.venv-chatterbox` CPU se conserva como fallback recuperable.
+
+En modo voz, Mark carga y prima Chatterbox **antes** de iniciar `llama-server`.
+Así la voz reserva primero su VRAM y `--fit on` limita automáticamente el offload
+de Qwen3-8B a la memoria restante. El orden inverso se midió y produjo paginación
+WDDM: una frase llegó a tardar 77,5 s pese a usar CUDA. El modelo no obtiene
+autoridad adicional por ejecutarse en GPU.
 
 El PCM16 viaja codificado en base64 en una única respuesta JSONL. El lector IPC
 usa un límite explícito de 32 MiB y rechaza PCM mayor de 24 MiB o de longitud
@@ -79,9 +85,12 @@ Artefactos instalados:
 - PerTh fijado en commit `ff1c8ac55a976971245cdd53c18d6131ca00d993`;
 - código y modelos publicados como MIT; audio generado incorpora la marca de agua
   PerTh del proyecto;
-- worker comprobado completamente offline; carga inicial observada ~50 s en CPU.
-- smoke real con la muestra consentida: 56.640 muestras a 24 kHz, 2,36 s de
-  audio, pico PCM 5.467 y 115,94 s desde arranque frío.
+- worker comprobado completamente offline; CUDA se prima durante el arranque;
+- smoke conjunto real: carga+priming de voz 21,739 s, carga posterior del LLM
+  12,423 s, TTFT 0,515 s, 10,11 tokens/s y 5,681 s para producir 4,4 s de audio;
+- VRAM global observada: 1.565 MiB base, 5.268 MiB con voz y 7.533 MiB con voz+LLM.
+- reproducción física final: 3,562 s de síntesis para 3,28 s de audio y 3,594 s
+  de playback WASAPI, sin error del dispositivo de salida.
 
 Instalación reproducible:
 
@@ -146,6 +155,9 @@ La cancelación de reproducción tiene prueba automática y corrección de carre
 no se repitió con audio Piper audible después de que el usuario rechazara la voz.
 
 Resultado completo: [benchmark de Fase 2](../benchmarks/results/audio-phase2.md).
+
+La aceleración posterior de la voz clonada se registra por separado en
+[benchmark Chatterbox CUDA](../benchmarks/results/chatterbox-cuda-rtx5060.md).
 
 ## Privacidad y limitaciones
 

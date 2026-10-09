@@ -79,12 +79,12 @@ volume = 0.9
 # Backend opcional de clonación. Permanece inactivo hasta crear el entorno,
 # descargar el modelo exacto y enrolar explícitamente la voz propia.
 [voice_clone]
-python = ".venv-chatterbox\\Scripts\\python.exe"
+python = ".venv-chatterbox-cuda\\Scripts\\python.exe"
 model_path = "models\\chatterbox-es-latam"
 model_file = "t3_es_mx_latam.safetensors"
 reference_path = "data\\voices\\user\\reference.wav"
 consent_path = "data\\voices\\user\\consent.json"
-device = "cpu"
+device = "cuda"
 timeout_seconds = 180
 exaggeration = 0.5
 cfg_weight = 0.4

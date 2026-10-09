@@ -54,6 +54,22 @@ def main() -> int:
         )
         _stage("conditionals", started)
         model.prepare_conditionals(args.reference)
+        if args.device == "cuda":
+            # La primera inferencia CUDA inicializa kernels de atención y puede
+            # añadir varios segundos al primer turno. Se paga ese coste durante
+            # el arranque, antes de anunciar que la voz está lista.
+            _stage("cuda_prime", started)
+            priming_waveform = model.generate(
+                "Listo.",
+                language_id=args.language,
+                exaggeration=0.5,
+                cfg_weight=0.4,
+                temperature=0.8,
+            )
+            del priming_waveform
+            import torch
+
+            torch.cuda.synchronize()
     _stage("ready", started)
     _reply({"type": "ready", "sample_rate": int(model.sr), "device": args.device})
 

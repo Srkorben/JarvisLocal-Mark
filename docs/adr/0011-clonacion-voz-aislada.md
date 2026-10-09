@@ -1,7 +1,8 @@
 # ADR 0011: clonación de voz propia en proceso aislado
 
 Estado: aceptada — 2026-10-08. La importación autorizada posterior se regula en
-el ADR 0016 sin cambiar el aislamiento del proveedor.
+el ADR 0016 sin cambiar el aislamiento del proveedor. La selección CPU/GPU fue
+sustituida por ADR 0017; se conservan la frontera, consentimiento y modo offline.
 
 El requisito inicial excluía clonación, pero el usuario solicitó explícitamente
 usar su propia voz después de escuchar y rechazar la voz Piper. Se admite solo

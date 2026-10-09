@@ -4,6 +4,7 @@ from unittest import TestCase
 
 from pydantic import ValidationError
 
+from jarvis_local.config import Settings
 from tests.helpers import make_settings
 
 
@@ -32,4 +33,14 @@ class ConfigTests(TestCase):
         with TemporaryDirectory() as directory:
             with self.assertRaises(ValidationError):
                 make_settings(Path(directory), llama_gpu_layers="maximum")
+
+    def test_production_voice_profile_uses_isolated_cuda_worker(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        settings = Settings.load(root / "config" / "jarvis.toml")
+        self.assertEqual(settings.tts_provider, "chatterbox")
+        self.assertEqual(settings.tts_clone_device, "cuda")
+        self.assertEqual(
+            settings.tts_clone_python,
+            (root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe").resolve(),
+        )
 

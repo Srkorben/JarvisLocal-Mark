@@ -67,7 +67,7 @@ GetAsyncKeyState(acorde configurado)
   → misma sesión y Orchestrator de texto
   → TTSProvider
      ├─ Piper (fallback técnico)
-     └─ Chatterbox worker aislado (voz propia, CPU, offline)
+     └─ Chatterbox worker aislado (voz propia, CUDA, offline)
   → SoundDevicePlayer / WASAPI compartido
 ```
 
@@ -76,10 +76,12 @@ confirmar acciones sensibles: cualquier confirmación sigue entrando por la CLI
 local confiable y queda ligada al `request_id`. Audio y transcripción no se
 guardan en auditoría; solo metadatos y latencias. No existe escucha continua.
 
-Chatterbox vive en `.venv-chatterbox` porque su NumPy/PyTorch no son compatibles
-con la pila ligera del core. El worker no escucha red: usa stdin/stdout, archivos
-fijados y variables offline. Terminar el proceso ofrece cancelación real de una
-inferencia Torch. El consentimiento local liga la muestra propia por SHA-256.
+Chatterbox vive en `.venv-chatterbox-cuda` porque su NumPy/PyTorch no son
+compatibles con la pila ligera del core. El worker no escucha red: usa
+stdin/stdout, archivos fijados y variables offline. Terminar el proceso ofrece
+cancelación real de una inferencia Torch. El consentimiento local liga la muestra
+propia por SHA-256. En voz se carga antes del LLM para reservar VRAM; llama.cpp
+adapta después su offload.
 
 ## Interfaz gráfica
 
@@ -216,7 +218,7 @@ antes de acceder a datos.
 - **`llama-server` embeddings:** segundo proceso loopback, Qwen3-Embedding-0.6B,
   pooling `last`, CPU por defecto y carga bajo demanda.
 - **Worker Chatterbox opcional:** proceso local sin puerto, entorno Python
-  separado, CPU y carga bajo demanda; bloqueado hasta enrolamiento explícito.
+  separado, CUDA y carga bajo demanda; bloqueado hasta enrolamiento explícito.
 - **Broker .NET 8:** named pipe con ACL por usuario; FS/procesos/UIA/captura. No
   acepta comandos libres ni confía en el riesgo enviado por Python.
 - **Índice ANN futuro:** Qdrant o extensión SQLite solo si el benchmark supera la

@@ -170,6 +170,12 @@ turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confir
 acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
 muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
 
+La voz clonada usa CUDA en la RTX 5060. Mark carga y prepara Chatterbox antes de
+`llama-server`, de modo que el offload adaptativo del LLM solo utiliza la VRAM
+restante. La carga inicial observada fue 21,74 s; una respuesta de 4,4 s de audio
+se sintetizó en 5,68 s con ambos modelos residentes. El entorno CPU anterior se
+conserva como fallback, pero no es la selección activa.
+
 ## Configuración de modelos
 
 `config\jarvis.toml` selecciona el proveedor sin cambiar el núcleo:
