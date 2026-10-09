@@ -24,6 +24,7 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
     """
 
     settings = Settings.load(project_root / "config" / "jarvis.toml")
+    tts_provider, tts_device = settings.effective_tts
     counts = Database(settings.database_path).counts()
     engines = _engine_status()
     return {
@@ -99,7 +100,9 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                     ["Entrada", _device(settings.audio_input_device)],
                     ["Salida", _device(settings.audio_output_device)],
                     ["STT", f"{settings.stt_provider} / {settings.stt_compute_type}"],
-                    ["TTS", f"{settings.tts_provider} / {settings.tts_clone_device}"],
+                    ["STT en", "CPU"],
+                    ["TTS", f"{tts_provider} / {tts_device.upper()}"],
+                    ["Chat escrito", "Sin STT; TTS solo al pedir voz"],
                     ["Hablar", _pretty_hotkey(settings.audio_ptt_hotkey)],
                     ["Cancelar", _pretty_hotkey(settings.audio_cancel_hotkey)],
                     ["Muestreo", f"{settings.audio_sample_rate} Hz"],
@@ -107,7 +110,8 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                 ],
                 "capabilities": [
                     "WASAPI compartido y selección configurable",
-                    "faster-whisper local y voz propia Chatterbox",
+                    "faster-whisper local y voz ligera Piper en CPU",
+                    "Voz propia Chatterbox conservada (GPU solo con autorización)",
                     "Cancelación de captura, LLM, TTS y reproducción",
                 ],
                 "limitations": [
@@ -135,6 +139,7 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                     ["Thinking", _on_off(settings.think)],
                     ["GPU layers", str(settings.llama_gpu_layers)],
                     ["Reserva VRAM", f"{settings.llama_fit_target_mib} MiB"],
+                    ["GPU", "Reservada para el LLM" if tts_device == "cpu" else "Compartida con la voz"],
                 ],
                 "capabilities": [
                     "Streaming y cancelación real",

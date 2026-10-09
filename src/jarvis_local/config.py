@@ -85,6 +85,9 @@ class Settings(BaseModel):
     tts_clone_reference_path: Path | None = None
     tts_clone_consent_path: Path | None = None
     tts_clone_device: str = "cpu"
+    # Chatterbox en CUDA comparte los 8 GB de VRAM con el LLM y lo frena
+    # hasta 10 veces; solo se carga en la GPU con autorización explícita.
+    tts_clone_allow_gpu: bool = False
     tts_clone_timeout_seconds: float = Field(default=180, gt=0, le=900)
     tts_clone_exaggeration: float = Field(default=0.5, ge=0.25, le=2.0)
     tts_clone_cfg_weight: float = Field(default=0.4, ge=0.0, le=1.0)
@@ -148,6 +151,24 @@ class Settings(BaseModel):
         if value not in {"piper", "chatterbox"}:
             raise ValueError("Proveedor TTS no soportado.")
         return value
+
+    @property
+    def tts_gpu_blocked(self) -> bool:
+        """Chatterbox pide CUDA sin que se haya autorizado compartir la GPU."""
+
+        return (
+            self.tts_provider == "chatterbox"
+            and self.tts_clone_device == "cuda"
+            and not self.tts_clone_allow_gpu
+        )
+
+    @property
+    def effective_tts(self) -> tuple[str, str]:
+        """Proveedor y dispositivo de síntesis que se usarán realmente."""
+
+        if self.tts_provider == "chatterbox" and not self.tts_gpu_blocked:
+            return "chatterbox", self.tts_clone_device
+        return "piper", "cpu"
 
     @field_validator("tts_clone_device")
     @classmethod
@@ -354,6 +375,7 @@ class Settings(BaseModel):
                 voice_clone.get("consent_path", "data/voices/user/consent.json"),
             ),
             tts_clone_device=str(voice_clone.get("device", "cpu")),
+            tts_clone_allow_gpu=bool(voice_clone.get("allow_gpu", False)),
             tts_clone_timeout_seconds=float(
                 voice_clone.get("timeout_seconds", 180)
             ),

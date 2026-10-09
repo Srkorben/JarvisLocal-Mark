@@ -211,8 +211,8 @@ async def run_suite(
         "repeat": repeat,
         "model": settings.model,
         "context_tokens": settings.context_tokens,
-        "tts_provider": settings.tts_provider if profile == "voice" else None,
-        "tts_device": settings.tts_clone_device if profile == "voice" else None,
+        "tts_provider": settings.effective_tts[0] if profile == "voice" else None,
+        "tts_device": settings.effective_tts[1] if profile == "voice" else None,
         "startup": {},
         "resources_before": probe(),
         "scenarios": {},
@@ -427,6 +427,9 @@ async def async_main(argv: list[str] | None = None) -> int:
         updates["tts_provider"] = args.tts_provider
     if args.tts_device:
         updates["tts_clone_device"] = args.tts_device
+        # Pedir --tts-device cuda en el benchmark es la autorización explícita
+        # para medir Chatterbox en la GPU.
+        updates["tts_clone_allow_gpu"] = args.tts_device == "cuda"
     if updates:
         settings = settings.model_copy(update=updates)
     player = None

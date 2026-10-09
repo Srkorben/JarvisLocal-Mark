@@ -68,8 +68,10 @@ hotwords = "Mark Mark Scout JarvisLocal Qwen3 llama.cpp SQLite Git README Markdo
 min_language_probability = 0.60
 min_average_log_probability = -1.0
 
+# Ref 1.0: Piper en CPU es la voz provisional para reservar la VRAM al LLM.
+# Con Chatterbox CUDA cargado, Qwen3-8B bajó de ~55 a ~6 tokens/s en la RTX 5060.
 [tts]
-provider = "chatterbox"
+provider = "piper"
 voice_path = "models\\piper\\es\\es_MX\\ald\\medium\\es_MX-ald-medium.onnx"
 config_path = "models\\piper\\es\\es_MX\\ald\\medium\\es_MX-ald-medium.onnx.json"
 language = "es-MX"
@@ -85,6 +87,9 @@ model_file = "t3_es_mx_latam.safetensors"
 reference_path = "data\\voices\\user\\reference.wav"
 consent_path = "data\\voices\\user\\consent.json"
 device = "cuda"
+# Chatterbox no se carga en la GPU sin esta autorización explícita; si falta,
+# se usa Piper en CPU. Actívala solo tras medir el reparto de VRAM.
+allow_gpu = false
 timeout_seconds = 180
 exaggeration = 0.5
 cfg_weight = 0.4

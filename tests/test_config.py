@@ -34,13 +34,29 @@ class ConfigTests(TestCase):
             with self.assertRaises(ValidationError):
                 make_settings(Path(directory), llama_gpu_layers="maximum")
 
-    def test_production_voice_profile_uses_isolated_cuda_worker(self) -> None:
+    def test_production_voice_profile_reserves_gpu_for_llm(self) -> None:
+        # Decisión de Ref 1.0: la VRAM es del LLM; la voz provisional es
+        # Piper en CPU y Chatterbox se conserva configurado pero sin GPU.
         root = Path(__file__).resolve().parents[1]
         settings = Settings.load(root / "config" / "jarvis.toml")
-        self.assertEqual(settings.tts_provider, "chatterbox")
+        self.assertEqual(settings.tts_provider, "piper")
+        self.assertEqual(settings.effective_tts, ("piper", "cpu"))
+        self.assertFalse(settings.tts_clone_allow_gpu)
         self.assertEqual(settings.tts_clone_device, "cuda")
-        self.assertEqual(
-            settings.tts_clone_python,
-            (root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe").resolve(),
+        self.assertTrue(
+            settings.tts_clone_python.as_posix().replace("\\", "/").endswith(
+                ".venv-chatterbox-cuda/Scripts/python.exe"
+            )
         )
+
+    def test_chatterbox_cuda_requires_explicit_gpu_authorization(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        settings = Settings.load(root / "config" / "jarvis.toml")
+        blocked = settings.model_copy(update={"tts_provider": "chatterbox"})
+        self.assertTrue(blocked.tts_gpu_blocked)
+        self.assertEqual(blocked.effective_tts, ("piper", "cpu"))
+        allowed = blocked.model_copy(update={"tts_clone_allow_gpu": True})
+        self.assertEqual(allowed.effective_tts, ("chatterbox", "cuda"))
+        on_cpu = blocked.model_copy(update={"tts_clone_device": "cpu"})
+        self.assertEqual(on_cpu.effective_tts, ("chatterbox", "cpu"))
 
