@@ -15,9 +15,15 @@ import webbrowser
 from pathlib import Path
 from typing import Iterator
 
+from ..config import Settings
+from ..database import Database
+from ..policy import PolicyEngine
+from ..projects import ProjectService
 from .catalog import build_tool_catalog
+from .modules import build_module_snapshot
 from .runtime import ProcessManager
 from .server import ControlCenterHTTPServer
+from .voice_import import VoiceReferenceImporter
 
 
 LOGGER = logging.getLogger("jarvis_local.control_center")
@@ -106,8 +112,29 @@ def serve() -> int:
         csrf_token = secrets.token_urlsafe(32)
         catalog = build_tool_catalog(root)
         manager = ProcessManager(catalog)
-        icon = root / "assets" / "jarvislocal-control-center.ico"
-        server = _bind_available_server(manager, auth_token, csrf_token, icon)
+        settings = Settings.load(root / "config" / "jarvis.toml")
+        database = Database(settings.database_path)
+        project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
+            "JarvisLocal", settings.project_dir
+        )
+        if settings.tts_clone_reference_path is None or settings.tts_clone_consent_path is None:
+            raise RuntimeError("voice_clone.reference_path/consent_path no están configurados.")
+        voice_importer = VoiceReferenceImporter(
+            data_dir=settings.data_dir,
+            reference_path=settings.tts_clone_reference_path,
+            consent_path=settings.tts_clone_consent_path,
+            database=database,
+            project_id=project.id,
+        )
+        icon = root / "assets" / "mark-scout.ico"
+        server = _bind_available_server(
+            manager,
+            auth_token,
+            csrf_token,
+            icon,
+            root,
+            voice_importer=voice_importer.import_base64,
+        )
         endpoint = {
             "pid": os.getpid(),
             "port": server.server_address[1],
@@ -120,6 +147,7 @@ def serve() -> int:
         try:
             server.serve_forever(poll_interval=0.25)
         finally:
+            manager.stop_all()
             server.server_close()
             current = read_endpoint(root)
             if current and current.get("pid") == os.getpid():
@@ -148,8 +176,14 @@ def stop() -> bool:
 
 
 def _bind_available_server(
-    manager: ProcessManager, auth_token: str, csrf_token: str, icon: Path
+    manager: ProcessManager,
+    auth_token: str,
+    csrf_token: str,
+    icon: Path,
+    root: Path | None = None,
+    voice_importer=None,
 ) -> ControlCenterHTTPServer:
+    project = root or project_root()
     last_error: OSError | None = None
     for port in PORT_RANGE:
         try:
@@ -159,7 +193,9 @@ def _bind_available_server(
                 auth_token=auth_token,
                 csrf_token=csrf_token,
                 icon_path=icon,
-                version="Fase 2",
+                module_snapshot=lambda: build_module_snapshot(project),
+                voice_importer=voice_importer,
+                version="Mark Scout · Desktop Alpha",
             )
         except OSError as exc:
             last_error = exc

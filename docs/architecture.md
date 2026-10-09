@@ -1,8 +1,8 @@
-# Arquitectura
+# Arquitectura de Mark Scout
 
 ## Principios
 
-JarvisLocal empieza como monolito modular. Solo el servidor de modelos y, más
+Mark Scout conserva la base técnica JarvisLocal como monolito modular. Solo el servidor de modelos y, más
 adelante, el broker sensible de Windows viven en procesos separados. Seguridad,
 integridad, control del usuario y determinismo prevalecen sobre autonomía.
 
@@ -49,6 +49,8 @@ archivos/proceso, DOM, UI Automation, OCR, VLM y finalmente coordenadas.
 | `memory` | trabajo, episodios, decisiones temporales y perfil explícito | persistencia; no infiere autoridad |
 | `rag` | extracción, embeddings, FTS5, vectores y citas | recuperación filtrada por proyecto |
 | `audio` | WASAPI, PTT, STT/TTS sustituibles y máquina de estados | interfaz; sin autoridad nueva |
+| `control_center` | panel loopback, presencia efímera y catálogo cerrado | interfaz; ejecuta solo ToolSpec fijados |
+| `desktop` | shell WPF/WebView2 y ciclo de vida de la ventana | presentación; sin permisos del agente |
 | `benchmark` | medición reproducible de modelo, tools y cancelación | observación |
 
 En fases posteriores se crearán paquetes `planner`, `browser` y un
@@ -78,6 +80,35 @@ Chatterbox vive en `.venv-chatterbox` porque su NumPy/PyTorch no son compatibles
 con la pila ligera del core. El worker no escucha red: usa stdin/stdout, archivos
 fijados y variables offline. Terminar el proceso ofrece cancelación real de una
 inferencia Torch. El consentimiento local liga la muestra propia por SHA-256.
+
+## Interfaz gráfica
+
+```text
+JarvisLocal.exe (WPF, instancia única)
+  → inicia/reutiliza control_center con pythonw
+  → WebView2 restringido al origen 127.0.0.1:puerto
+  → escena Canvas/CSS + controles de catálogo cerrado
+       ← presencia de voz efímera y acotada
+       → start/stop por identificador de ToolSpec
+```
+
+El shell no replica el core: conversación, memoria, RAG, política y herramientas
+siguen en Python. El proceso de voz se inicia directamente con el Python del
+entorno y `CREATE_NO_WINDOW`; stdout/stderr van a `DEVNULL` para que una conversación
+no termine persistida accidentalmente como log del lanzador. La UI solo recibe
+estado, transcripción, respuesta y error en memoria. Cerrar la aplicación detiene
+el servidor y sus procesos hijos propiedad.
+
+Los seis módulos consultan `/api/modules`, una vista curada de `Settings` y de
+recuentos SQLite. El canal es de solo lectura y no publica secretos ni contenido.
+`VisualQualityGovernor` vive en el frontend: Auto cambia entre 45/20 FPS y limita
+DPR/partículas según el estado; una pestaña oculta deja de dibujar. Esto protege
+recursos del LLM sin acoplar el renderer a la política.
+
+Los motores 3D siguen el patrón del ADR 0015: son clientes de presentación sin
+autoridad. La primera integración Godot recibe únicamente presencia efímera por
+un endpoint loopback autenticado y se inicia desde el catálogo cerrado. El motor
+no accede directamente al LLM, memoria, herramientas ni SQLite.
 
 ## Flujo de una acción
 

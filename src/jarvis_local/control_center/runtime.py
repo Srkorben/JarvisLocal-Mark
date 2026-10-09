@@ -159,6 +159,8 @@ class ProcessManager:
             creation_flags = 0
             if os.name == "nt" and tool.visible_console:
                 creation_flags = subprocess.CREATE_NEW_CONSOLE | subprocess.CREATE_NEW_PROCESS_GROUP
+            elif os.name == "nt":
+                creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
             try:
                 process = self._popen(
                     command,
@@ -166,6 +168,9 @@ class ProcessManager:
                     shell=False,
                     creationflags=creation_flags,
                     close_fds=True,
+                    stdin=subprocess.DEVNULL if not tool.visible_console else None,
+                    stdout=subprocess.DEVNULL if not tool.visible_console else None,
+                    stderr=subprocess.DEVNULL if not tool.visible_console else None,
                 )
             except Exception as exc:
                 self._last_result[tool_id] = {
@@ -207,6 +212,28 @@ class ProcessManager:
             result = {"outcome": "stopped", "tool_id": tool_id, "pid": pid, "finished_at": _now()}
             self._last_result[tool_id] = result
             return result
+
+    def stop_all(self) -> None:
+        """Detiene los procesos propiedad del panel al cerrar la aplicación."""
+
+        with self._lock:
+            for tool_id in tuple(self._records):
+                tool = self.catalog[tool_id]
+                if not tool.stoppable:
+                    # Explorer/Notepad pueden continuar siendo útiles después de
+                    # cerrar el panel. No debemos cerrar aplicaciones delegadas
+                    # que el catálogo declara expresamente no detenibles.
+                    continue
+                record = self._active_record(tool_id)
+                if record is None:
+                    continue
+                try:
+                    if self._process_terminator is not None:
+                        self._process_terminator(record.process)
+                    else:
+                        _terminate_process_tree(record.process)
+                finally:
+                    self._records.pop(tool_id, None)
 
 
 def _now() -> str:

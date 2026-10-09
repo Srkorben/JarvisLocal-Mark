@@ -1,7 +1,8 @@
 # Voz local push-to-talk
 
-Estado: infraestructura implementada y probada; activación de la voz clonada
-pendiente del enrolamiento explícito del usuario.
+Estado: infraestructura implementada y probada; referencia propia enrolada e
+importación local autorizada disponible. La aceptación de naturalidad sigue
+pendiente de evaluación humana.
 
 ## Flujo
 
@@ -14,7 +15,7 @@ hotkey global (mantener) → WASAPI compartido → PCM mono 16 kHz
 
 La máquina de estados es `IDLE → RECORDING → TRANSCRIBING → PROCESSING →
 SPEAKING → IDLE`, con `CANCELLING` y `ERROR`. Un único lock impide turnos
-concurrentes. La interfaz es semidúplex: mientras Jarvis habla no vuelve a abrir
+concurrentes. La interfaz es semidúplex: mientras Mark habla no vuelve a abrir
 el micrófono. No existe wake word, escucha continua ni historial paralelo.
 
 ## Uso
@@ -30,7 +31,7 @@ Set-Location 'C:\Users\andcb\Documents\AI Local\JarvisLocal'
 .\.venv\Scripts\python.exe -m jarvis_local.cli --voice
 ```
 
-Mantén `Ctrl+Alt+J`, habla y suelta para transcribir. `Ctrl+Alt+Pause` cancela el
+Mantén `Ctrl+Alt+M`, habla y suelta para transcribir. `Ctrl+Alt+Pause` cancela el
 turno activo, cierra la generación, detiene TTS y propaga el token a herramientas.
 `Ctrl+C` cierra la interfaz. Las teclas se pueden cambiar en `[audio]`; solo se
 consulta el estado de ese acorde, no se registra texto ni se implementa keylogging.
@@ -41,7 +42,8 @@ consulta el estado de ese acorde, no se registra texto ni se implementa keyloggi
 - revisión fijada `536b0662742c02347bc0e980a01041f333bce120`;
 - 486.217.556 bytes; `model.bin` SHA-256
   `3e305921506d8872816023e4c273e75d2419fb89b24da97b4fe7bce14170d671`;
-- idioma `es`, prompt/hotwords para JarvisLocal, Qwen3, Git, README y SQLite;
+- idioma `es`, prompt/hotwords para Mark, Mark Scout, JarvisLocal, Qwen3, Git,
+  README y SQLite;
 - Silero VAD integrado por `vad_filter`, sin un segundo runtime Torch;
 - texto normalizado a NFC y UTF-8 válido antes de entrar al LLM.
 
@@ -98,8 +100,22 @@ La CLI exige escribir `MI VOZ`, muestra claramente cuándo el micrófono está
 activo y guarda `reference.wav` y `consent.json` dentro de `data/voices/user/`.
 El consentimiento contiene el SHA-256 de la muestra; si cambia, el backend se
 bloquea. No se almacena audio en auditoría y la voz nunca sirve como confirmación
-de una acción sensible. Para repetir el enrolamiento hay que eliminar ambos
-archivos conscientemente; Jarvis no sobrescribe una muestra.
+de una acción sensible.
+
+La aplicación gráfica añade **Sistemas → Enrolar mi voz → Subir audio**. Acepta
+WAV, MP3, M4A, FLAC, OGG, OPUS, AAC y WMA, con máximo de 24 MiB y duración
+validada de 15–30 segundos. WAV se decodifica en el núcleo; los demás formatos
+usan el FFmpeg local mediante argumentos fijos, `shell=False`, timeout y salida
+acotada. Toda entrada termina como PCM16 mono a 24 kHz y se rechaza si es silencio.
+
+La importación exige confirmar desde la interfaz autenticada que el usuario es
+titular de la voz o posee autorización del titular. Si ya hay una referencia, se
+crea primero un respaldo recuperable en `data/voices/user/history/`. El manifiesto
+liga la nueva muestra por SHA-256 y registra procedencia/autorización, pero no
+afirma la identidad de quien aparece en el audio. La auditoría conserva hash,
+duración, formato y resultado; nunca el audio ni su nombre original. No se exponen
+rutas ni comandos al navegador. Chatterbox realiza condicionamiento zero-shot:
+esta operación cambia la referencia activa, no entrena pesos.
 
 ## Medición observada
 

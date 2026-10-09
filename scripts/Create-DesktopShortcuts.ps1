@@ -8,5 +8,5 @@ $Consolidator = Join-Path $PSScriptRoot 'Consolidate-DesktopShortcuts.ps1'
 if (-not (Test-Path -LiteralPath $Consolidator)) {
     throw "No existe el consolidador requerido: $Consolidator"
 }
-Write-Host 'Los accesos individuales fueron sustituidos por JarvisLocal.lnk.'
+Write-Host 'Los accesos individuales fueron sustituidos por Mark Scout.lnk.'
 & $Consolidator

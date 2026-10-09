@@ -1,4 +1,4 @@
-# Seguridad de JarvisLocal
+# Seguridad de Mark Scout / JarvisLocal
 
 ## Frontera de confianza
 
@@ -112,11 +112,18 @@ estructurada no existe.
 ## Voz clonada
 
 La voz sintética es salida expresiva, no identidad ni autenticación. El
-enrolamiento exige una acción CLI local, la frase exacta `MI VOZ` y almacena una
-muestra dentro de `data/voices/user`, ignorada por Git. El manifiesto solo autoriza
-TTS local de JarvisLocal. Si la muestra cambia, el hash deja de coincidir y el
-worker no arranca. No existe una herramienta del LLM para enrolar, sustituir o
-exportar una voz.
+enrolamiento por micrófono exige una acción CLI local y la frase exacta `MI VOZ`.
+La interfaz también permite importar una muestra únicamente después de confirmar
+propiedad o permiso del titular. En ambos casos queda dentro de
+`data/voices/user`, ignorada por Git, y ligada por SHA-256 a un manifiesto de TTS
+local. Si cambia, el worker no arranca. No existe una herramienta del LLM para
+enrolar, sustituir o exportar una voz.
+
+La importación acepta solo extensiones cerradas, rechaza rutas, limita tamaño y
+duración, normaliza a PCM16/24 kHz y usa FFmpeg con comando fijo cuando hace falta.
+Se bloquea mientras la conversación de voz está activa. Un reemplazo conserva un
+respaldo local recuperable; auditoría no almacena PCM ni el nombre original. La
+confirmación de uso de una voz nunca autoriza acciones del agente.
 
 Los pesos y el tokenizador se descargan en setup; al ejecutar, el worker establece
 modo offline y deshabilita telemetría de Hugging Face. El modelo incorpora su
@@ -142,9 +149,29 @@ proceso, cookie HttpOnly/SameSite, comprobaciones Host/Origin, CSRF, CSP, límit
 cuerpo y `no-store`. El archivo de endpoint recibe ACL de la cuenta local. Queries,
 cookies y tokens se omiten de logs.
 
-La API no es un shell: únicamente acepta un identificador presente en el catálogo
-compilado y el booleano `confirmed`. Ejecutable, argumentos y working directory
+La API no es un shell: las acciones ejecutables únicamente aceptan un identificador
+presente en el catálogo compilado y el booleano `confirmed`. La ruta separada de
+importación acepta un nombre base, Base64 acotado y dos booleanos tipados; nunca
+acepta una ruta local o un comando. Ejecutable, argumentos y working directory
 proceden de `ToolSpec` revisados y se lanzan con `shell=False`. Una página, modelo,
 documento o petición HTTP no puede añadir herramientas. Mantenimiento y
 enrolamiento exigen confirmación en la interfaz; grupos de exclusión impiden que
 modelos, audio o instaladores incompatibles compitan entre sí.
+
+La aplicación WPF no amplía esta autoridad. WebView2 solo permite navegar al
+puerto loopback exacto; deniega permisos web, ventanas emergentes y navegación
+externa, y desactiva DevTools y menús contextuales. La voz oculta no escribe
+stdout/stderr a archivos. El canal de presencia es efímero, autenticado y acepta
+solo estado, transcripción, respuesta y error acotados; campos de política,
+permisos o herramientas son rechazados.
+
+La API de módulos es autenticada y de solo lectura. Construye una vista curada de
+la configuración y recuentos SQLite; no devuelve tokens, contraseñas, contenido de
+conversaciones ni rutas de modelos. Solo Interfaz permite cambiar calidad visual,
+una preferencia de `localStorage` sin efecto sobre permisos. Autoridad y Seguridad
+no pueden editarse desde WebView2.
+
+Los clientes 3D reciben únicamente la presencia efímera necesaria para renderizar.
+El token de sesión se hereda por entorno al proceso, no se persiste en el proyecto
+gráfico y no concede acceso a acciones del catálogo. Un documento, escena o asset
+3D continúa siendo datos no confiables y jamás puede elevar permisos.

@@ -255,7 +255,7 @@ async def async_main(argv: list[str] | None = None) -> int:
             print("Enrolamiento cancelado.")
             return 1
         print(
-            "Lee con voz natural: 'JarvisLocal es mi asistente personal. Hoy voy a "
+            "Lee con voz natural: 'Mark es mi asistente personal local. Hoy voy a "
             "organizar mis proyectos, revisar documentos y consultar el estado de Git.'"
         )
         input("Pulsa Enter cuando estés listo; la grabación será visible: ")
@@ -634,6 +634,9 @@ async def async_main(argv: list[str] | None = None) -> int:
                 create_tts_provider,
                 run_push_to_talk_loop,
             )
+            from .control_center.presence import VoicePresenceClient
+
+            presence = VoicePresenceClient.discover(settings.project_dir)
 
             def voice_state(state: VoiceState) -> None:
                 labels = {
@@ -646,16 +649,24 @@ async def async_main(argv: list[str] | None = None) -> int:
                     VoiceState.ERROR: "[ERROR EN EL TURNO DE VOZ]",
                 }
                 print(f"\n{labels[state]}", flush=True)
+                if presence is not None:
+                    presence.set_state(state.value)
 
             def voice_transcript(text: str) -> None:
                 print(f"\nTú (transcripción)> {text}", flush=True)
                 print(f"\n{settings.assistant_name}> ", end="", flush=True)
+                if presence is not None:
+                    presence.set_transcript(text)
 
             def voice_delta(delta: str) -> None:
                 print(delta, end="", flush=True)
+                if presence is not None:
+                    presence.append_response(delta)
 
             def voice_error(message: str) -> None:
                 print(f"\nDetalle: {message}", flush=True)
+                if presence is not None:
+                    presence.set_error(message)
 
             recorder = SoundDeviceRecorder(
                 selector=settings.audio_input_device,
@@ -683,17 +694,36 @@ async def async_main(argv: list[str] | None = None) -> int:
                 on_error=voice_error,
             )
             print("Cargando STT y TTS locales…", flush=True)
-            await manager.warmup()
-            print(
-                f"Voz local lista — proyecto: {project.name}\n"
-                f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
-                f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Jarvis."
-            )
-            await run_push_to_talk_loop(
-                manager,
-                ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
-                cancel=WindowsKeyChord.parse(settings.audio_cancel_hotkey),
-            )
+            if presence is not None:
+                presence.set_state("loading")
+            try:
+                await manager.warmup()
+                if presence is not None:
+                    # VoiceSessionManager nace en IDLE, por lo que no emite una
+                    # transición hasta el primer turno. La interfaz gráfica sí
+                    # necesita conocer que el calentamiento ya terminó.
+                    presence.set_state("idle")
+                print(
+                    f"Voz local lista — proyecto: {project.name}\n"
+                    f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
+                    f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
+                )
+                await run_push_to_talk_loop(
+                    manager,
+                    ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
+                    cancel=WindowsKeyChord.parse(settings.audio_cancel_hotkey),
+                )
+            except Exception as exc:
+                if presence is not None:
+                    presence.set_error(str(exc))
+                    presence.set_state("error")
+                # Si el fallo ocurrió durante warmup, el bucle PTT todavía no
+                # tuvo oportunidad de cerrar los proveedores y su worker.
+                await manager.close()
+                raise
+            finally:
+                if presence is not None and presence.state != "error":
+                    presence.close()
             return 0
 
         if args.once:

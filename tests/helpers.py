@@ -10,7 +10,7 @@ from jarvis_local.rag import EmbeddingBatch, EmbeddingHealth, EmbeddingProvider
 def make_settings(root: Path, **updates) -> Settings:
     values = {
         "project_dir": root,
-        "assistant_name": "Jarvis",
+        "assistant_name": "Mark",
         "language": "es",
         "model_provider": "ollama",
         "model_base_url": "http://127.0.0.1:11434",

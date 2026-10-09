@@ -9,14 +9,18 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from .runtime import ControlCenterError, ProcessManager
+from .presence import PRESENCE_FIELDS, VoicePresenceStore
+from .voice_import import VoiceImportError
 from .web import render_dashboard
 
 
 LOGGER = logging.getLogger("jarvis_local.control_center")
 MAX_BODY_BYTES = 4096
+MAX_VOICE_IMPORT_BODY_BYTES = 34 * 1024 * 1024
 
 
 class ControlCenterHTTPServer(ThreadingHTTPServer):
@@ -30,12 +34,18 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         auth_token: str,
         csrf_token: str,
         icon_path: Path,
+        presence: VoicePresenceStore | None = None,
+        module_snapshot: Callable[[], dict[str, Any]] | None = None,
+        voice_importer: Callable[..., dict[str, object]] | None = None,
         version: str = "local",
     ) -> None:
         self.manager = manager
         self.auth_token = auth_token
         self.csrf_token = csrf_token
         self.icon_path = icon_path
+        self.presence = presence or VoicePresenceStore()
+        self.module_snapshot = module_snapshot
+        self.voice_importer = voice_importer
         self.version = version
         super().__init__(address, ControlCenterRequestHandler)
 
@@ -66,7 +76,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             return
         parsed = urlsplit(self.path)
         if parsed.path == "/health":
-            self._json(HTTPStatus.OK, {"status": "ok", "service": "JarvisLocal Control Center"})
+            self._json(HTTPStatus.OK, {"status": "ok", "service": "Mark Scout Control Center"})
             return
         if parsed.path == "/favicon.ico":
             self._favicon()
@@ -84,7 +94,8 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", "0")
             self.end_headers()
             return
-        if not self._authenticated():
+        api_bearer = parsed.path in {"/api/voice/presence", "/api/modules"} and self._bearer_authenticated()
+        if not self._authenticated() and not api_bearer:
             self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Abre el panel desde el acceso directo local.")
             return
         if parsed.path == "/":
@@ -104,6 +115,29 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/tools":
             self._json(HTTPStatus.OK, {"tools": self.server.manager.list_status()})
             return
+        if parsed.path == "/api/voice/presence":
+            self._json(HTTPStatus.OK, {"presence": self.server.presence.snapshot()})
+            return
+        if parsed.path == "/api/modules":
+            if self.server.module_snapshot is None:
+                self._json_error(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "modules_unavailable",
+                    "La vista de módulos no está disponible.",
+                )
+                return
+            try:
+                snapshot = self.server.module_snapshot()
+            except Exception:
+                LOGGER.exception("No se pudo construir la vista segura de módulos.")
+                self._json_error(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "modules_failed",
+                    "No se pudo leer la configuración local.",
+                )
+                return
+            self._json(HTTPStatus.OK, snapshot)
+            return
         self._json_error(HTTPStatus.NOT_FOUND, "not_found", "Ruta no encontrada.")
 
     def do_POST(self) -> None:  # noqa: N802
@@ -115,6 +149,20 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"result": {"outcome": "stopping"}})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
+        if parsed.path == "/api/voice/presence":
+            if not self._bearer_authenticated():
+                self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Token interno inválido.")
+                return
+            try:
+                payload = self._read_json(
+                    allowed_fields=PRESENCE_FIELDS, max_body_bytes=32_768
+                )
+                presence = self.server.presence.update(payload)
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_presence", str(exc))
+                return
+            self._json(HTTPStatus.OK, {"presence": presence})
+            return
         if not self._authenticated():
             self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Autenticación requerida.")
             return
@@ -123,8 +171,64 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         ):
             self._json_error(HTTPStatus.FORBIDDEN, "csrf_rejected", "Solicitud local no confiable.")
             return
+        if parsed.path == "/api/voice/reference/import":
+            if self.server.voice_importer is None:
+                self._json_error(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "voice_import_unavailable",
+                    "La importación local de voz no está configurada.",
+                )
+                return
+            if any(
+                item["id"] in {"voice", "enroll_voice"}
+                and item["status"] == "running"
+                for item in self.server.manager.list_status()
+            ):
+                self._json_error(
+                    HTTPStatus.CONFLICT,
+                    "voice_runtime_active",
+                    "Detén la conversación o grabación de voz antes de cambiar la referencia.",
+                )
+                return
+            try:
+                payload = self._read_json(
+                    allowed_fields=frozenset(
+                        {
+                            "filename",
+                            "audio_base64",
+                            "authorization_confirmed",
+                            "replace_existing",
+                        }
+                    ),
+                    max_body_bytes=MAX_VOICE_IMPORT_BODY_BYTES,
+                )
+                if not isinstance(payload.get("filename"), str) or not isinstance(
+                    payload.get("audio_base64"), str
+                ):
+                    raise ValueError("filename y audio_base64 deben ser texto.")
+                if not isinstance(
+                    payload.get("authorization_confirmed"), bool
+                ) or not isinstance(payload.get("replace_existing"), bool):
+                    raise ValueError("Las confirmaciones de importación deben ser booleanas.")
+                result = self.server.voice_importer(**payload)
+            except VoiceImportError as exc:
+                self._json(exc.http_status, {"error": exc.as_dict()})
+                return
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                return
+            except Exception:
+                LOGGER.exception("Falló la importación local de referencia de voz.")
+                self._json_error(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "voice_import_failed",
+                    "No se pudo importar la referencia de voz.",
+                )
+                return
+            self._json(HTTPStatus.OK, {"result": result})
+            return
         try:
-            payload = self._read_json()
+            payload = self._read_json(allowed_fields=frozenset({"confirmed"}))
         except ValueError as exc:
             self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
             return
@@ -138,28 +242,41 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 result = self.server.manager.start(
                     tool_id, confirmed=payload.get("confirmed") is True
                 )
+                if tool_id == "voice":
+                    self.server.presence.update(
+                        {"state": "loading", "transcript": "", "response": "", "error": ""}
+                    )
             else:
                 result = self.server.manager.stop(tool_id)
+                if tool_id == "voice":
+                    self.server.presence.update(
+                        {"state": "offline", "transcript": "", "response": "", "error": ""}
+                    )
         except ControlCenterError as exc:
             self._json(exc.http_status, {"error": exc.as_dict()})
             return
         self._json(HTTPStatus.OK, {"result": result})
 
-    def _read_json(self) -> dict[str, object]:
+    def _read_json(
+        self,
+        *,
+        allowed_fields: frozenset[str],
+        max_body_bytes: int = MAX_BODY_BYTES,
+    ) -> dict[str, object]:
         raw_length = self.headers.get("Content-Length", "0")
         try:
             length = int(raw_length)
         except ValueError as exc:
             raise ValueError("Content-Length inválido.") from exc
-        if length < 0 or length > MAX_BODY_BYTES:
+        if length < 0 or length > max_body_bytes:
             raise ValueError("Cuerpo HTTP demasiado grande.")
         raw = self.rfile.read(length)
         try:
             value = json.loads(raw or b"{}")
         except json.JSONDecodeError as exc:
             raise ValueError("JSON inválido.") from exc
-        if not isinstance(value, dict) or set(value).difference({"confirmed"}):
-            raise ValueError("Solo se acepta el campo tipado 'confirmed'.")
+        if not isinstance(value, dict) or set(value).difference(allowed_fields):
+            raise ValueError("La solicitud contiene campos no permitidos.")
         if "confirmed" in value and not isinstance(value["confirmed"], bool):
             raise ValueError("'confirmed' debe ser booleano.")
         return value
@@ -193,7 +310,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Security-Policy",
             f"default-src 'none'; script-src {script}; style-src {style}; "
-            "connect-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
+            "connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         )
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")

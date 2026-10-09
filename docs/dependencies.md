@@ -129,10 +129,36 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 - PyTorch 2.6.0 CPU y NumPy 1.26.4 aislados;
 - worker cargado offline; semejanza pendiente de la muestra del usuario.
 
+### Normalización de referencias importadas
+
+- WAV PCM se normaliza con biblioteca estándar + NumPy del entorno de audio;
+- FFmpeg Essentials 8.1.1 local procesa MP3, M4A, FLAC, OGG, OPUS, AAC y WMA;
+- FFmpeg se invoca con argumentos fijos, sin shell, red ni plugins del navegador;
+- si FFmpeg no existe, WAV continúa disponible y los demás formatos fallan cerrado.
+
 Fuentes primarias: [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
 [Piper OHF](https://github.com/OHF-Voice/piper1-gpl),
 [Chatterbox](https://github.com/resemble-ai/chatterbox) y
 [modelo LatAm](https://huggingface.co/ResembleAI/Chatterbox-Multilingual-es-mx-latam).
+
+## Aplicación de escritorio
+
+- .NET SDK/runtime 8 para compilar y ejecutar el shell WPF `win-x64`;
+- `Microsoft.Web.WebView2` 1.0.4258.31, licencia Microsoft;
+- Microsoft Edge WebView2 Runtime instalado localmente (154.0.4258.62 durante la
+  validación de esta máquina);
+- Godot 4.7.2 está instalado por WinGet para el prototipo de presencia 3D;
+- Unity Hub 3.22.2, Unity Editor 6000.3.26f1 y Epic Games Launcher 20.3.3 están
+  instalados; Unreal Editor no está instalado;
+- los editores Unity/Unreal no son dependencias de ejecución del núcleo.
+
+La escena principal usa Canvas 2D del WebView2 ya presente. Godot es opcional y
+se ejecuta como cliente; si no está instalado, conversación, políticas y tools
+siguen funcionando. Cualquier renderer futuro deberá degradarse sin afectar el
+número de tokens/s ni la seguridad.
+
+La publicación es dependiente del runtime y se genera en `runtime/desktop`, que
+queda fuera de Git. El frontend no carga fuentes, scripts ni recursos remotos.
 
 ## Fases posteriores
 

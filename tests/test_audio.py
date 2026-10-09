@@ -22,6 +22,7 @@ from jarvis_local.audio import (
 )
 from jarvis_local.audio.providers import _safe_transcript_text
 from jarvis_local.audio.enrollment import (
+    create_authorized_voice_consent,
     create_own_voice_consent,
     validate_own_voice_consent,
 )
@@ -69,7 +70,7 @@ class FakeRecorder(AudioRecorder):
 class FakeSTT(STTProvider):
     name = "fake_stt"
 
-    def __init__(self, text: str = "Hola Jarvis", *, ambiguous: bool = False):
+    def __init__(self, text: str = "Hola Mark", *, ambiguous: bool = False):
         self.text = text
         self.ambiguous = ambiguous
         self.calls = 0
@@ -223,6 +224,23 @@ class VoiceCloneConsentTests(TestCase):
                 validate_own_voice_consent(reference, consent)
             self.assertEqual(caught.exception.code, "reference_changed")
 
+    def test_authorized_local_upload_is_bound_without_claiming_identity(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"authorized voice fixture")
+            create_authorized_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=20.0,
+                source_extension=".wav",
+            )
+            record = validate_own_voice_consent(reference, consent)
+            self.assertTrue(record["authorization_confirmed"])
+            self.assertNotIn("confirmed_owner", record)
+            self.assertEqual(record["source"], "trusted_local_ui_upload")
+
 
 class StubChatterboxProvider(ChatterboxTTSProvider):
     def __init__(self, settings, worker: Path):
@@ -337,7 +355,7 @@ class VoiceSessionTests(IsolatedAsyncioTestCase):
             task = await manager.finish_recording()
             result = await task
             self.assertEqual(result.outcome, "success")
-            self.assertEqual(result.transcript, "Hola Jarvis")
+            self.assertEqual(result.transcript, "Hola Mark")
             self.assertEqual(result.response, "Respuesta local.")
             self.assertEqual(
                 states,

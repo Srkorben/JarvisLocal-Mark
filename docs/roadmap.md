@@ -10,7 +10,7 @@ baja, media, alta o experimental.
 | 2 — Voz PTT | WASAPI, VAD, STT/TTS sustituibles, hotkey y corte de audio | sounddevice, Silero integrado, faster-whisper, Chatterbox/Piper | media-alta; drivers, calidad y latencia | **infraestructura completa; aceptación de voz propia pendiente** |
 | 3 — Memoria/RAG | proyectos, indexador, FTS5, vectores, citas y diario semántico | SQLite FTS5, Qwen3-Embedding-0.6B; ANN solo si escala | alta; mezcla de proyectos e inyección | respuestas con evidencia trazable; **completa** |
 | 4 — Herramientas deterministas | 10 herramientas de búsqueda, apertura, Git y archivos | APIs Python/Win32, Git, ShellExecute | media; TOCTOU y rollback | operaciones verificadas sin mouse; **completa con escritura deny-by-default** |
-| 5 — Acceso permanente | centro web local completo; faltan bandeja, inicio opcional, wake word e indicadores | biblioteca estándar; futuro tray/openWakeWord | media-alta; privacidad y lifecycle | **parcial: acceso único y servicio bajo demanda validados** |
+| 5 — Acceso permanente | aplicación gráfica y centro local completos; faltan bandeja, inicio opcional y wake word | WPF, WebView2, biblioteca estándar; futuro tray/openWakeWord | media-alta; privacidad y lifecycle | **parcial: `.exe`, acceso único, indicadores y servicio bajo demanda validados** |
 | 6 — Automatización estructurada | broker, pipe, DOM/UIA y verificador para 1–2 apps | .NET 8, named pipes, FlaUI/UIA3, Playwright | alta; foco, DPI, diálogos | flujos conocidos con ≥95 % de éxito |
 | 7 — Visión/multietapa | captura, OCR, VLM bajo demanda y bucle observar-actuar | Windows.Graphics.Capture, PaddleOCR, Qwen3-VL-4B | experimental; grounding y VRAM | respaldo visual estrictamente limitado |
 | 8 — Endurecimiento | rollback, cifrado, aislamiento, métricas, adversarial/concurrencia | DPAPI/Credential Manager, ACL/AppContainer | alta y continua | uso cotidiano controlado |
@@ -36,12 +36,20 @@ smoke test de archivos/Git y tool call real del LLM. Escritura, apertura y
 ejecución permanecen denegadas por proyecto hasta habilitación explícita. La
 evaluación de CORE sólo añadió decisiones temporales en SQLite; tareas, reglas,
 MCP y eventos continúan diferidos. La prioridad inmediata es enrolar y validar la
-voz propia para cerrar Fase 2. El centro web local no incorpora automatización de
-navegador; Playwright, UIA, broker y visión continúan fuera de alcance.
+voz propia para cerrar Fase 2. La Desktop Alpha elimina la consola de la experiencia
+normal y muestra ondas/estados. Sus seis módulos ya son interactivos y el
+gobernador Auto/Equilibrado/Eco reduce la carga visual durante inferencia. No es
+aún un entorno 3D ni un avatar en el shell principal. Godot 4.7.2 ya valida una
+presencia 3D externa y autenticada; Unity y Unreal se compararán sin trasladarles
+autoridad del núcleo.
+El panel
+local no incorpora automatización de navegador; Playwright, UIA, broker y visión
+continúan fuera de alcance. Las integraciones futuras con APIs, Pinokio o agentes
+entrarán mediante adaptadores tipados, no mediante ejecución arbitraria desde la UI.
 
 ## Clasificación de expectativas
 
-**Estable hoy:** LLM/STT/TTS offline, PTT, wake word, RAG explícito, APIs de
+**Estable hoy:** LLM/STT/TTS offline, PTT, RAG explícito, APIs de
 archivos, DOM, UIA, permisos, listas y auditoría.
 
 **Viable pero frágil:** full-duplex, grounding visual, UI personalizada, tareas
@@ -51,3 +59,8 @@ coexistencia permanente de modelos grandes en 8 GB.
 **No realista prometer:** autonomía ilimitada, memoria perfecta, fiabilidad humana
 en cualquier interfaz, paridad constante con los mejores modelos cloud, control de
 UAC/pantalla bloqueada o cero acciones equivocadas.
+
+La evolución visual incremental y sus puertas de decisión están documentadas en
+[immersive-interface.md](immersive-interface.md); instalaciones y pruebas en
+[3d-engines.md](3d-engines.md). El siguiente incremento razonable es instrumentar
+telemetría local de GPU/VRAM antes de mantener escenas 3D residentes.

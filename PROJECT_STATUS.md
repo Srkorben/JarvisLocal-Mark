@@ -1,17 +1,21 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-08
+Última actualización: 2026-10-09
 
 ## Resumen
+
+Identidad pública actual: **Mark Scout**; nombre habitual: **Mark**. La base
+técnica conserva `JarvisLocal` como nombre de repositorio, paquete, datos y
+ejecutable hasta una migración separada.
 
 | Fase | Estado | Evidencia |
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 95 pruebas + E2E; muestra enrolada y síntesis real, falta evaluar naturalidad |
+| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 106 pruebas + 3 subtests + E2E; muestra enrolada/importable y síntesis real, falta evaluar naturalidad |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
-| 5 — Acceso permanente | **Parcial** | centro web/shortcut listo; faltan bandeja, wake word e inicio de sesión |
+| 5 — Acceso permanente | **Parcial** | aplicación WPF/WebView2 y acceso `.exe`; faltan bandeja, wake word e inicio de sesión |
 | 6 — Automatización estructurada | Pendiente | no iniciado |
 | 7 — Visión y tareas multietapa | Pendiente/experimental | no iniciado |
 | 8 — Endurecimiento | Continuo | controles base presentes; falta endurecimiento integral |
@@ -19,36 +23,54 @@
 Incremento posterior a Fase 4: **evaluación de CORE y decisiones temporales,
 completado**. No constituye una fase nueva y no cambia la prioridad de voz PTT.
 
-Incremento de acceso: **centro de control web local completado**. Consolida nueve
-accesos JarvisLocal. Por solicitud posterior del usuario, los tres `.lnk` ajenos
-también se retiraron del Escritorio tras respaldarlos; sus aplicaciones y archivos
-de origen permanecen intactos.
+Incremento de acceso: **centro de control local completado**. Consolida los nueve
+accesos históricos de JarvisLocal en un único `Mark Scout.lnk`. Los accesos de
+otros proyectos no forman parte de esta consolidación y no son gestionados por
+JarvisLocal.
+
+Incremento de interfaz: **Desktop Alpha de Mark Scout implementada**. `JarvisLocal.exe` aloja el
+panel en WPF/WebView2 sin consola, reutiliza el mismo core Python y representa de
+forma visual todos los estados de voz. Se validó carga real hasta `EN ESPERA`,
+detención completa del árbol de voz y escena `RESPONDIENDO` con ondas expansivas.
+Los seis indicadores son módulos seleccionables respaldados por configuración
+real de solo lectura. Interfaz ofrece un gobernador Auto/Equilibrado/Eco que baja
+a 20 FPS durante inferencia y pausa al ocultarse. No es todavía un motor 3D ni
+incorpora avatar en la ventana principal. Godot 4.7.2 sí está instalado e
+integrado como cliente experimental de presencia 3D; Unity/Unreal se mantienen
+separados hasta completar sus pruebas.
 
 ## Centro de control local
 
 - servidor de biblioteca estándar ligado exclusivamente a `127.0.0.1`;
 - puerto preferido 8765 con fallback cerrado 8766–8774;
 - inicio bajo demanda, health check y bloqueo de segunda instancia;
-- catálogo cerrado de nueve herramientas, sin comandos/argumentos desde HTTP;
+- catálogo cerrado de diez herramientas, sin comandos/argumentos desde HTTP;
 - cookie HttpOnly/SameSite, token aleatorio, CSRF, Host/Origin y CSP;
 - procesos con `shell=False`, grupos de exclusión, cooldown y detención del árbol;
 - confirmación local para enrolamiento e instalación/mantenimiento;
 - estados disponible/en ejecución/no disponible/error;
 - icono oscuro personalizado y respaldo recuperable de `.lnk` sustituidos;
-- ADR 0012 y operación en `docs/control-center.md`.
+- ejecutable WPF de instancia única, WebView2 restringido a loopback y cierre
+  coordinado de procesos;
+- ADR 0012/0013 y operación en `docs/control-center.md` y `docs/desktop.md`.
+- Godot 4.7.2 instalado y smoke autenticado contra presencia loopback;
+- Unity Hub 3.22.2 y Unity 6.3 LTS 6000.3.26f1 instalados; el adaptador
+  permanece bloqueado por falta de licencia activa (código 198);
+- Epic Games Launcher actualizado; Unreal 5.8 requiere autenticación del usuario.
 
 ## Fase 2 implementada
 
 - contratos `STTProvider`, `TTSProvider`, recorder y player sustituibles;
 - máquina de estados semidúplex con exclusión de turnos concurrentes;
 - WASAPI compartido, selección de dispositivo y resampling explícito;
-- hotkeys globales configurables `Ctrl+Alt+J` y `Ctrl+Alt+Pause`;
+- hotkeys globales configurables `Ctrl+Alt+M` y `Ctrl+Alt+Pause`;
 - faster-whisper small multilingüe, CPU INT8, Silero VAD y hotwords;
 - transcripción visible, detección de silencio/ambigüedad y Unicode seguro;
 - mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
 - Piper validado como fallback; su voz fue rechazada por el usuario;
 - Chatterbox LatAm instalado en proceso/venv separado, CPU y offline;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
+- importación desde UI de audio autorizado de 15–30 s, ocho formatos, respaldo y auditoría;
 - transporte JSONL ampliado y acotado para el PCM16 base64 de Chatterbox;
 - cancelación durante captura, STT, LLM, playback y worker de clonación;
 - auditoría de metadatos/latencia sin almacenar audio ni transcripción.
@@ -147,8 +169,10 @@ privilegios. El modelo no puede cambiar permisos.
 ## Validación ejecutada
 
 ```text
-python -m pytest -q                         95/95 OK (+3 subtests)
+python -m pytest -q                         106/106 OK (+3 subtests)
 python -m compileall -q src tests           OK
+dotnet build JarvisLocal.Desktop Release    OK, 0 warnings / 0 errors
+Publish-Desktop.ps1                         OK, win-x64 framework-dependent
 python -m jarvis_local.cli --doctor         OK
 python -m jarvis_local.cli --verify-audit   OK
 python -m jarvis_local.cli --audio-doctor   OK; Chatterbox CPU/offline ~46,08 s
@@ -169,6 +193,14 @@ voz clonada del usuario                      PCM válido: 2,36 s; cold start 115
 control_center unit/API security             7/7 OK
 control_center smoke HTTP/Windows            9 tools; open/start/stop OK
 segunda apertura del centro                  mismo PID/puerto, sin duplicado
+Godot smoke autenticado + ciclo catálogo     OK; start/idempotencia/stop
+Godot ventana 3D real                        OK; ~168,23 MiB RAM, ~60 MiB VRAM orientativos
+importación de voz sintética aislada         OK; normalización, rechazo, respaldo y auditoría
+acceso Mark Scout.lnk → aplicación WPF        OK; ventana Mark Scout, sin consola
+segunda apertura del `.exe`                 misma instancia/PID
+voz desde UI: loading → idle                  OK; ~50 s en carga fría observada
+escena speaking + ondas + texto             OK, validación visual
+stop desde UI                               OK; sin worker de voz huérfano
 ```
 
 La suite cubre: cambio de proveedor, proveedor indisponible, respuesta normal,
@@ -243,6 +275,7 @@ Informe completo: [benchmarks/results/qwen3-8b-q4_k_m-ctx8192.md](benchmarks/res
 - llama.cpp 0.6.0-dev, build b11459, commit f498f864f, CUDA 12.4;
 - NVIDIA RTX 5060 Laptop detectada, 8151 MiB;
 - Ollama 0.40 conservado como proveedor opcional de desarrollo.
+- .NET 8 y WebView2 Runtime 154.0.4258.62 para `JarvisLocal.exe`.
 
 ## Benchmark RAG validado
 

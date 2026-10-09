@@ -9,6 +9,15 @@ data/
 logs/
 models/
 runtime/
+/backups/desktop-shortcuts/
 config/jarvis.local.toml
 benchmarks/.tmp/
+desktop/**/bin/
+desktop/**/obj/
+integrations/godot/**/.godot/
+integrations/unity/**/Library/
+integrations/unity/**/Logs/
+integrations/unity/**/Temp/
+integrations/unity/**/UserSettings/
+integrations/unity/**/obj/
 

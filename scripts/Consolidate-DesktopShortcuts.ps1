@@ -4,11 +4,11 @@ param()
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $Desktop = [Environment]::GetFolderPath('Desktop')
-$PowerShell = (Get-Command pwsh.exe -ErrorAction Stop).Source
-$Launcher = Join-Path $PSScriptRoot 'Launch-ControlCenter.ps1'
-$Icon = Join-Path $ProjectRoot 'assets\jarvislocal-control-center.ico'
-$CentralShortcut = Join-Path $Desktop 'JarvisLocal.lnk'
+$DesktopApp = Join-Path $ProjectRoot 'runtime\desktop\JarvisLocal.exe'
+$Icon = Join-Path $ProjectRoot 'assets\mark-scout.ico'
+$CentralShortcut = Join-Path $Desktop 'Mark Scout.lnk'
 $Names = @(
+    'JarvisLocal.lnk',
     'JarvisLocal - Abrir proyecto.lnk',
     'JarvisLocal - Chat de texto.lnk',
     'JarvisLocal - Configuración.lnk',
@@ -20,7 +20,7 @@ $Names = @(
     'JarvisLocal - Preparar modelos de audio.lnk'
 )
 
-foreach ($Required in @($Launcher, $Icon)) {
+foreach ($Required in @($DesktopApp, $Icon)) {
     if (-not (Test-Path -LiteralPath $Required)) {
         throw "Falta el archivo requerido: $Required"
     }
@@ -48,16 +48,16 @@ if ($Existing.Count -gt 0) {
 }
 
 $Shortcut = $Shell.CreateShortcut($CentralShortcut)
-$Shortcut.TargetPath = $PowerShell
-$Shortcut.Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Launcher`""
+$Shortcut.TargetPath = $DesktopApp
+$Shortcut.Arguments = ''
 $Shortcut.WorkingDirectory = $ProjectRoot
-$Shortcut.Description = 'Abre el Centro de control web local de JarvisLocal.'
+$Shortcut.Description = 'Abre Mark Scout, el asistente local de escritorio.'
 $Shortcut.IconLocation = "$Icon,0"
-$Shortcut.WindowStyle = 7
+$Shortcut.WindowStyle = 1
 $Shortcut.Save()
 
 $Validation = $Shell.CreateShortcut($CentralShortcut)
-if ($Validation.TargetPath -ne $PowerShell -or -not (Test-Path -LiteralPath $Icon)) {
+if ($Validation.TargetPath -ne $DesktopApp -or -not (Test-Path -LiteralPath $Icon)) {
     throw 'El acceso central no superó la validación; no se retiraron los anteriores.'
 }
 

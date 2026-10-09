@@ -5,6 +5,7 @@ import base64
 import contextlib
 import json
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -26,19 +27,34 @@ def _reply(payload: dict) -> None:
     sys.stdout.flush()
 
 
+def _stage(name: str, started: float) -> None:
+    """Escribe hitos diagnósticos sin contaminar el protocolo JSONL."""
+
+    print(
+        f"[jarvis-chatterbox] stage={name} elapsed_seconds={time.monotonic() - started:.3f}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 def main() -> int:
     args = parse_args()
+    started = time.monotonic()
     # Las bibliotecas de investigación imprimen progreso; el stdout queda
     # reservado exclusivamente al protocolo JSONL local.
     with contextlib.redirect_stdout(sys.stderr):
+        _stage("import", started)
         from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
+        _stage("model_load", started)
         model = ChatterboxMultilingualTTS.from_local(
             args.model_dir,
             device=args.device,
             t3_model=args.model_file,
         )
+        _stage("conditionals", started)
         model.prepare_conditionals(args.reference)
+    _stage("ready", started)
     _reply({"type": "ready", "sample_rate": int(model.sr), "device": args.device})
 
     for raw_line in sys.stdin.buffer:

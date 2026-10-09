@@ -13,6 +13,7 @@ from .models import AudioBuffer
 
 
 CONSENT_VERSION = 1
+AUTHORIZED_UPLOAD_CONSENT_VERSION = 2
 
 
 def sha256_file(path: Path) -> str:
@@ -63,6 +64,49 @@ def create_own_voice_consent(
     return record
 
 
+def create_authorized_voice_consent(
+    *,
+    reference_path: Path,
+    consent_path: Path,
+    duration_seconds: float,
+    source_extension: str,
+) -> dict:
+    """Liga una referencia importada a una autorización dada en la UI local.
+
+    La confirmación afirma propiedad *o* permiso suficiente del titular. No se
+    infiere identidad a partir del audio ni se conserva el nombre del archivo.
+    """
+
+    if not reference_path.is_file():
+        raise AudioError(
+            "reference_missing",
+            f"No existe la muestra de voz: {reference_path}",
+            component="voice_clone",
+        )
+    record = {
+        "version": AUTHORIZED_UPLOAD_CONSENT_VERSION,
+        "authorization_confirmed": True,
+        "authorization_basis": "owner_or_permission_from_voice_owner",
+        "scope": "JarvisLocal local TTS only",
+        "source": "trusted_local_ui_upload",
+        "source_extension": source_extension.casefold(),
+        "reference_sha256": sha256_file(reference_path),
+        "reference_filename": reference_path.name,
+        "duration_seconds": round(duration_seconds, 3),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "notice": (
+            "El usuario confirmó en la interfaz local que es titular de la voz o "
+            "que cuenta con autorización para usarla. La muestra no puede utilizarse "
+            "como confirmación de seguridad ni acredita identidad."
+        ),
+    }
+    consent_path.parent.mkdir(parents=True, exist_ok=True)
+    consent_path.write_text(
+        json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return record
+
+
 def validate_own_voice_consent(reference_path: Path, consent_path: Path) -> dict:
     if not reference_path.is_file():
         raise AudioError(
@@ -84,15 +128,23 @@ def validate_own_voice_consent(reference_path: Path, consent_path: Path) -> dict
             f"El manifiesto de voz no es válido: {exc}",
             component="voice_clone",
         ) from exc
-    if (
-        not isinstance(record, dict)
-        or record.get("version") != CONSENT_VERSION
-        or record.get("confirmed_owner") is not True
-        or record.get("source") != "trusted_local_cli"
-    ):
+    own_voice_consent = (
+        isinstance(record, dict)
+        and record.get("version") == CONSENT_VERSION
+        and record.get("confirmed_owner") is True
+        and record.get("source") == "trusted_local_cli"
+    )
+    authorized_upload_consent = (
+        isinstance(record, dict)
+        and record.get("version") == AUTHORIZED_UPLOAD_CONSENT_VERSION
+        and record.get("authorization_confirmed") is True
+        and record.get("authorization_basis") == "owner_or_permission_from_voice_owner"
+        and record.get("source") == "trusted_local_ui_upload"
+    )
+    if not (own_voice_consent or authorized_upload_consent):
         raise AudioError(
             "consent_invalid",
-            "El manifiesto no confirma propiedad desde la CLI local confiable.",
+            "El manifiesto no contiene una autorización válida desde una interfaz local confiable.",
             component="voice_clone",
         )
     actual_hash = sha256_file(reference_path)

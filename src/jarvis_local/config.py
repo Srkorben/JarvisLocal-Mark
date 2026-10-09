@@ -14,7 +14,7 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     project_dir: Path
-    assistant_name: str = "Jarvis"
+    assistant_name: str = "Mark"
     language: str = "es"
     model_provider: str = "ollama"
     model_base_url: str = "http://127.0.0.1:11434"
@@ -233,7 +233,7 @@ class Settings(BaseModel):
 
         return cls(
             project_dir=project_dir,
-            assistant_name=str(assistant.get("name", "Jarvis")),
+            assistant_name=str(assistant.get("name", "Mark")),
             language=str(assistant.get("language", "es")),
             model_provider=str(llm.get("provider", llm.get("backend", "ollama"))),
             model_base_url=str(llm.get("base_url", "http://127.0.0.1:11434")),

@@ -11,6 +11,6 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
     throw 'El entorno no está preparado. Ejecuta scripts\Setup.ps1 primero.'
 }
 
-Write-Host 'JarvisLocal por voz' -ForegroundColor Cyan
-Write-Host 'Mantén Ctrl+Alt+J para hablar. Ctrl+Alt+Pause cancela el turno.'
+Write-Host 'Mark Scout por voz' -ForegroundColor Cyan
+Write-Host 'Mantén Ctrl+Alt+M para hablar. Ctrl+Alt+Pause cancela el turno.'
 & $PythonExe -m jarvis_local.cli --config $ConfigPath --voice

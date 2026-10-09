@@ -29,12 +29,12 @@ scripts, ejecutables y carpetas originales no se borraron ni modificaron.
 ## Arquitectura
 
 ```text
-JarvisLocal.lnk
-  → Launch-ControlCenter.ps1 (ventana oculta, error visible si falla)
-  → python -m jarvis_local.control_center --launch
+Mark Scout.lnk
+  → runtime/desktop/JarvisLocal.exe (WPF/WinExe, instancia única)
+  → pythonw -m jarvis_local.control_center --launch --no-browser
        ├─ reutiliza instancia saludable
        ├─ o inicia un único proceso pythonw
-       └─ abre el navegador predeterminado
+       └─ presenta el panel dentro de WebView2
 
 127.0.0.1:8765 (fallback 8766–8774)
   → autenticación local + cookie HttpOnly/SameSite
@@ -50,6 +50,12 @@ JarvisLocal.lnk
 El navegador no envía comandos. Solo puede seleccionar un identificador incluido
 en el catálogo Python. El cuerpo HTTP acepta únicamente el booleano `confirmed`;
 no existe un endpoint de shell, rutas, argumentos, variables de entorno ni código.
+
+La conversación de voz es una excepción de presentación, no de autoridad: se
+inicia directamente con `.venv\Scripts\python.exe`, `shell=False` y sin ventana de
+consola. Su presencia se publica en memoria al mismo servidor para animar la escena;
+el endpoint interno rechaza cualquier campo diferente de estado, transcripción,
+respuesta y error.
 
 El token se genera en cada inicio y se guarda en
 `data/control_center/endpoint.json`, cuya ACL se restringe a la cuenta actual. La
@@ -68,6 +74,14 @@ Las acciones de instalación y enrolamiento muestran una confirmación local. Ca
 script conserva consola visible; el panel no oculta su salida ni intenta aceptar
 prompts en nombre del usuario.
 
+La tarjeta **Enrolar mi voz** ofrece además **Subir audio**. El archivo viaja solo
+al servidor loopback autenticado y se admite como referencia si dura 15–30 s,
+pertenece a una allowlist de formatos y el usuario confirma propiedad o permiso
+del titular. La API no acepta rutas ni comandos, limita el cuerpo a 34 MiB
+codificados (24 MiB de audio), normaliza a PCM16/24 kHz, respalda la referencia
+anterior y registra únicamente metadatos. La conversación de voz debe estar
+detenida durante el cambio.
+
 ## Operación
 
 ```powershell
@@ -82,26 +96,31 @@ prompts en nombre del usuario.
 .\.venv\Scripts\python.exe -m jarvis_local.control_center_smoke
 ```
 
-El acceso único puede recrearse con `scripts/Consolidate-DesktopShortcuts.ps1`.
-Ese script respalda primero cada `.lnk` sustituido, crea y valida el nuevo enlace
-y solo entonces retira los nueve accesos redundantes. No elimina scripts,
-ejecutables, configuraciones, modelos ni carpetas originales.
+La versión original del acceso puede recrearse con
+`scripts/Consolidate-DesktopShortcuts.ps1`; la Desktop Alpha actualiza su destino
+al `.exe` publicado. Antes de cambiarlo se conserva una copia recuperable. Ningún
+script, ejecutable, configuración, modelo o carpeta original se elimina.
 
 Respaldo creado durante la consolidación validada:
 `backups/desktop-shortcuts/20261008-121213/` (nueve `.lnk` más
 `inventory.json`).
 
-Estado final del Escritorio: un solo acceso directo, `JarvisLocal.lnk`, más
-`LM.txt` con instrucciones de uso, voz, diagnóstico y rutas de las herramientas
-externas retiradas.
+Respaldo del acceso anterior a Desktop Alpha:
+`backups/desktop-shortcuts/desktop-alpha-20261008-185620/JarvisLocal.lnk`.
+
+Estado del proyecto en el Escritorio: un solo acceso directo público,
+`Mark Scout.lnk`, más `LM.txt` con instrucciones de uso, voz y diagnóstico. Otros
+accesos que puedan existir pertenecen a proyectos distintos y no son administrados
+por este centro.
 
 ## Limitaciones
 
-- El panel no se instala como servicio de Windows; el acceso lo inicia bajo la
-  sesión del usuario y la instancia queda en segundo plano.
+- La aplicación no se instala como servicio de Windows; el acceso la inicia bajo la
+  sesión del usuario y cerrar la ventana detiene sus procesos propiedad.
 - Aplicaciones delegadas como Explorer pueden reutilizar un proceso ya existente,
   por lo que su estado solo puede verificarse como lanzamiento solicitado.
-- La conversación por voz permanece bloqueada hasta el enrolamiento real.
+- La clonación de voz permanece bloqueada hasta el enrolamiento real; en esta
+  máquina la muestra y el consentimiento ya existen.
 - No se ejecutaron nuevamente los tres instaladores durante la aceptación: se
   verificaron catálogo, rutas, confirmación y ejecución mediante el mismo gestor,
   evitando reinstalaciones o descargas innecesarias.

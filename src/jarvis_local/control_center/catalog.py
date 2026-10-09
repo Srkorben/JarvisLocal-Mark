@@ -61,6 +61,13 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
     pwsh = _windows_executable("pwsh.exe", program_files / "PowerShell" / "7" / "pwsh.exe")
     explorer = _windows_executable("explorer.exe", windows / "explorer.exe")
     notepad = _windows_executable("notepad.exe", windows / "System32" / "notepad.exe")
+    local_app_data = Path(os.environ.get("LOCALAPPDATA", str(root)))
+    godot = _windows_executable(
+        "godot.exe", local_app_data / "Microsoft" / "WinGet" / "Links" / "godot.exe"
+    )
+
+    godot_project = root / "integrations" / "godot" / "mark-presence" / "project.godot"
+    control_center_endpoint = root / "data" / "control_center" / "endpoint.json"
 
     def script_tool(
         *,
@@ -73,28 +80,31 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
         requirements: tuple[Requirement, ...],
         groups: tuple[str, ...],
         confirmation: bool = False,
+        visible_console: bool = True,
     ) -> ToolSpec:
         script = scripts / script_name
+        arguments = [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(script),
+        ]
+        if visible_console:
+            arguments.insert(0, "-NoExit")
         return ToolSpec(
             id=tool_id,
             name=name,
             description=description,
             category=category,
             target=pwsh,
-            arguments=(
-                "-NoExit",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(script),
-            ),
+            arguments=tuple(arguments),
             working_directory=root,
             source=source,
             requirements=(Requirement(script, f"Script: scripts\\{script_name}"),) + requirements,
             exclusive_groups=groups,
             confirmation_required=confirmation,
-            visible_console=True,
+            visible_console=visible_console,
         )
 
     core_requirements = (
@@ -120,20 +130,23 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
             requirements=core_requirements,
             groups=("core_runtime", "maintenance"),
         ),
-        script_tool(
-            tool_id="voice",
+        ToolSpec(
+            id="voice",
             name="Conversación por voz",
-            description="Inicia el modo push-to-talk. Mantén Ctrl+Alt+J para hablar.",
+            description="Inicia el modo push-to-talk. Mantén Ctrl+Alt+M para hablar.",
             category="Asistente",
-            script_name="Run-Jarvis-Voice.ps1",
+            target=core_python,
+            arguments=("-m", "jarvis_local.cli", "--config", str(config), "--voice"),
+            working_directory=root,
             source="JarvisLocal - Conversación por voz.lnk",
             requirements=voice_requirements,
-            groups=("core_runtime", "audio", "maintenance"),
+            exclusive_groups=("core_runtime", "audio", "maintenance"),
+            visible_console=False,
         ),
         script_tool(
             tool_id="enroll_voice",
             name="Enrolar mi voz",
-            description="Graba localmente una muestra consciente de 20 segundos.",
+            description="Graba o importa localmente una muestra autorizada de unos 20 segundos.",
             category="Voz",
             script_name="Enroll-OwnVoice.ps1",
             source="JarvisLocal - Enrolar mi voz.lnk",
@@ -187,7 +200,7 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
         ToolSpec(
             id="open_project",
             name="Abrir proyecto",
-            description="Abre la carpeta raíz de JarvisLocal en el Explorador.",
+            description="Abre la carpeta técnica del proyecto en el Explorador.",
             category="Archivos",
             target=explorer,
             arguments=(str(root),),
@@ -207,6 +220,30 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
             source="JarvisLocal - Configuración.lnk",
             requirements=(Requirement(config, "Configuración config\\jarvis.toml"),),
             stoppable=False,
+        ),
+        ToolSpec(
+            id="presence_3d",
+            name="Presencia 3D experimental",
+            description="Abre una escena Godot conectada al estado efímero de Mark.",
+            category="Interfaz",
+            target=godot,
+            arguments=(
+                "--path",
+                str(godot_project.parent),
+                "--rendering-method",
+                "gl_compatibility",
+                "--",
+                "--endpoint-file",
+                str(control_center_endpoint),
+            ),
+            working_directory=root,
+            source="Integración Mark Scout / Godot 4.7.2",
+            requirements=(
+                Requirement(godot_project, "Proyecto Godot de presencia 3D"),
+                Requirement(control_center_endpoint, "Endpoint local de Mark Scout"),
+            ),
+            exclusive_groups=("visual_runtime",),
+            visible_console=False,
         ),
     )
     return {tool.id: tool for tool in tools}

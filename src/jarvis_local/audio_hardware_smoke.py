@@ -56,7 +56,7 @@ async def async_main() -> int:
         token = CancellationToken()
         started = time.monotonic()
         spoken = await tts.synthesize(
-            "Prueba de audio local de Jarvis completada.", token
+            "Prueba de audio local de Mark completada.", token
         )
         playback = await player.play(spoken, token)
         await tts.aclose()

@@ -40,7 +40,7 @@ from .tools import build_default_registry
 
 
 SPANISH_CASES = (
-    "Jarvis, abre el proyecto JarvisLocal.",
+    "Mark, abre el proyecto JarvisLocal.",
     "Busca el archivo README punto eme de.",
     "Consulta el estado de Git del proyecto.",
     "¿Cuál es la decisión vigente sobre SQLite?",
@@ -48,7 +48,7 @@ SPANISH_CASES = (
 )
 
 FULL_TURN_TEXT = (
-    "Jarvis, consulta la hora local actual utilizando la herramienta apropiada."
+    "Mark, consulta la hora local actual utilizando la herramienta apropiada."
 )
 
 
@@ -316,7 +316,7 @@ async def _run_full_turn(
 async def _measure_hardware_interruption(settings: Settings, tts) -> dict[str, Any]:
     text = (
         "Esta reproducción es deliberadamente larga para comprobar que la tecla "
-        "de cancelación detiene el audio de Jarvis de forma inmediata y consistente."
+        "de cancelación detiene el audio de Mark de forma inmediata y consistente."
     )
     audio = await tts.synthesize(text, CancellationToken())
     player = SoundDevicePlayer(selector=settings.audio_output_device)

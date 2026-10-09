@@ -1,9 +1,14 @@
-# JarvisLocal
+# Mark Scout
 
-JarvisLocal es la base de un copiloto personal para Windows, local por defecto,
+**Mark Scout** (nombre habitual: **Mark**) es un copiloto personal para Windows,
+local por defecto,
 auditable y cancelable. El proyecto se construye por fases: el modelo propone;
 política, presupuesto y ejecutor independientes conservan toda autoridad sobre el
 sistema operativo.
+
+La base técnica conserva temporalmente el nombre `JarvisLocal` en rutas, paquete
+Python, SQLite y ejecutable para evitar una migración destructiva. Esa distinción
+está documentada en el ADR 0014.
 
 ## Estado actual
 
@@ -35,7 +40,17 @@ Funciona ahora:
 - `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
 - `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
 - Chatterbox LatAm aislado/offline para la voz propia, ligado a consentimiento.
-- centro de control web en loopback con catálogo cerrado y un único acceso directo.
+- importación local de referencias de voz autorizadas (15–30 s) desde **Sistemas**,
+  con normalización, hash, respaldo recuperable y auditoría sin guardar el audio;
+- aplicación WPF/WebView2 `JarvisLocal.exe`, sin consola, con escena procedural,
+  ondas por estado de voz y centro de control loopback de catálogo cerrado;
+- presencia visual efímera para carga, escucha, transcripción, procesamiento,
+  respuesta, cancelación y error, sin duplicar historial ni guardar audio.
+- seis módulos interactivos con configuración real y límites explícitos;
+- gobernador visual Auto/Equilibrado/Eco que reduce FPS, resolución y partículas
+  durante inferencia y pausa el render al ocultarse.
+- cliente experimental Godot 4.7.2 conectado a la presencia efímera de Mark,
+  iniciable desde el catálogo cerrado sin acceso a memoria, política ni tools.
 
 El benchmark reproducible obtuvo 0,688 s de TTFT mediano, 54,85 tokens/s, 3/3
 casos de tool calling y cancelación en 94 ms. Son medidas de esta máquina y no una
@@ -78,9 +93,20 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
 
 ## Uso y verificación
 
-El Escritorio utiliza un único acceso `JarvisLocal.lnk` y el archivo informativo
-`LM.txt`; no quedan otros `.lnk`. El centro también puede iniciarse, consultarse o
-detenerse desde consola:
+La experiencia principal se abre desde `Mark Scout.lnk`, que ejecuta directamente
+`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. Pulsa **Iniciar voz**,
+espera el estado **En espera**, mantén `Ctrl+Alt+M` para hablar y suelta para enviar.
+Consulta [docs/desktop.md](docs/desktop.md).
+
+Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → Subir
+audio**. Admite WAV, MP3, M4A, FLAC, OGG, OPUS, AAC o WMA de 15–30 segundos y
+24 MiB como máximo. Debes confirmar que eres titular de la voz o que cuentas con
+autorización del titular. El proceso permanece en `127.0.0.1`; normaliza el audio
+a PCM mono de 24 kHz y respalda la referencia anterior. Chatterbox usa la muestra
+como referencia zero-shot: no se reentrenan los pesos del modelo.
+
+El centro también puede iniciarse, consultarse o detenerse desde consola para
+diagnóstico o recuperación:
 
 ```powershell
 .\.venv\Scripts\python.exe -m jarvis_local.control_center --launch
@@ -139,7 +165,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
 ```
 
-En voz, mantén `Ctrl+Alt+J` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
+En voz, mantén `Ctrl+Alt+M` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
 turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confirma
 acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
 muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
@@ -185,6 +211,7 @@ CLI local. `move_file` siempre exige además confirmación interactiva. Consulta
 JarvisLocal/
 ├─ benchmarks/             runner y resultados reproducibles
 ├─ config/                 configuración declarativa
+├─ desktop/                shell WPF/WebView2 de la aplicación gráfica
 ├─ docs/                   arquitectura, selección, roadmap y ADR
 ├─ models/                 pesos locales ignorados por Git
 ├─ runtime/                llama.cpp local ignorado por Git
@@ -192,6 +219,7 @@ JarvisLocal/
 ├─ src/jarvis_local/
 │  ├─ model_providers/     contrato, Ollama, llama.cpp y gestor del servidor
 │  ├─ audio/               WASAPI, STT/TTS, PTT, estados y enrolamiento
+│  ├─ control_center/      UI local, presencia efímera y gestor de procesos
 │  ├─ memory/              trabajo, episodios y perfil explícito
 │  ├─ rag/                 extracción, embeddings, índice y recuperación híbrida
 │  ├─ cli.py               interfaz local confiable
@@ -211,4 +239,7 @@ Consulta [SECURITY.md](SECURITY.md) antes de añadir una capacidad y
 [docs/tools.md](docs/tools.md) para acciones de Windows y
 [docs/roadmap.md](docs/roadmap.md) antes de ampliar el alcance. La auditoría,
 operación y recuperación del acceso único están en
-[docs/control-center.md](docs/control-center.md).
+[docs/control-center.md](docs/control-center.md). El diagnóstico y la hoja de ruta
+visual están en [docs/immersive-interface.md](docs/immersive-interface.md).
+El inventario y las pruebas de motores están en
+[docs/3d-engines.md](docs/3d-engines.md).
