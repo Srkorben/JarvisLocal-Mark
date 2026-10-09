@@ -2,6 +2,7 @@ from .base import AudioError, AudioPlayer, AudioRecorder, STTProvider, TTSProvid
 from .devices import SoundDeviceCatalog, SoundDevicePlayer, SoundDeviceRecorder
 from .diagnostics import audio_diagnostics
 from .hotkey import WindowsKeyChord
+from .lazy import LazyAudioPlayer, LazySTTProvider, LazyTTSProvider, NoMicrophoneRecorder
 from .models import (
     AudioBuffer,
     AudioDeviceInfo,
@@ -12,7 +13,7 @@ from .models import (
     VoiceTurnResult,
 )
 from .providers import create_stt_provider, create_tts_provider
-from .session import VoiceSessionManager, run_push_to_talk_loop
+from .session import VoiceSessionManager, run_push_to_talk_loop, run_text_request_loop
 
 __all__ = [
     "AudioBuffer",
@@ -20,6 +21,10 @@ __all__ = [
     "AudioError",
     "AudioPlayer",
     "AudioRecorder",
+    "LazyAudioPlayer",
+    "LazySTTProvider",
+    "LazyTTSProvider",
+    "NoMicrophoneRecorder",
     "STTProvider",
     "SoundDeviceCatalog",
     "SoundDevicePlayer",
@@ -36,4 +41,5 @@ __all__ = [
     "create_tts_provider",
     "audio_diagnostics",
     "run_push_to_talk_loop",
+    "run_text_request_loop",
 ]

@@ -583,6 +583,53 @@ async def run_push_to_talk_loop(
         await manager.close()
 
 
+async def run_text_request_loop(
+    manager: VoiceSessionManager,
+    *,
+    text_request_source: Callable[[], Awaitable[dict | None]],
+    cancel: WindowsKeyChord | None = None,
+    poll_seconds: float = 0.05,
+) -> None:
+    """Atiende el chat escrito del panel sin micrófono ni tecla PTT.
+
+    Comparte con el bucle PTT la sesión, la política y la cancelación; solo
+    cambia la entrada. La hotkey de emergencia sigue cancelando el turno.
+    """
+
+    cancel_was_pressed = False
+    request_task: asyncio.Task[dict | None] | None = None
+    pending: dict | None = None
+    try:
+        while True:
+            if cancel is not None:
+                cancel_pressed = cancel.is_pressed()
+                if cancel_pressed and not cancel_was_pressed:
+                    await manager.cancel_active("Hotkey de emergencia.")
+                cancel_was_pressed = cancel_pressed
+            if request_task is None and pending is None:
+                request_task = asyncio.create_task(text_request_source())
+            if request_task is not None and request_task.done():
+                try:
+                    pending = request_task.result() or pending
+                except Exception:
+                    pass
+                request_task = None
+            if pending is not None and manager.state is VoiceState.IDLE:
+                accepted = await manager.submit_text(
+                    str(pending["text"]),
+                    speak=pending.get("speak") is not False,
+                    queued_seconds=_seconds_since(pending.get("submitted_at")),
+                )
+                if accepted is not None:
+                    pending = None
+            await asyncio.sleep(poll_seconds)
+    finally:
+        if request_task is not None:
+            request_task.cancel()
+            await asyncio.gather(request_task, return_exceptions=True)
+        await manager.close()
+
+
 def _seconds_since(timestamp: object) -> float | None:
     """Espera en cola de una solicitud del panel (reloj de pared compartido)."""
 

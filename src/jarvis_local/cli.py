@@ -51,6 +51,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--list-audio-devices", action="store_true", help="Lista dispositivos PortAudio/WASAPI")
     parser.add_argument("--voice", action="store_true", help="Inicia conversación push-to-talk global")
     parser.add_argument(
+        "--panel-chat",
+        action="store_true",
+        help="Atiende el chat escrito del centro de control sin cargar STT ni micrófono",
+    )
+    parser.add_argument(
         "--enroll-own-voice",
         action="store_true",
         help="Graba localmente una muestra para clonación de la voz propia",
@@ -619,20 +624,24 @@ async def async_main(argv: list[str] | None = None) -> int:
         await embeddings.aclose()
         return 0 if result.ok else 1
 
-    # En voz CUDA, Chatterbox debe reservar su memoria antes de que
-    # llama-server calcule el offload automático. El orden inverso deja poca
-    # memoria contigua y provoca paginación WDDM, multiplicando la latencia TTS.
+    # Si el TTS usa CUDA (solo con voice_clone.allow_gpu), Chatterbox debe
+    # reservar su memoria antes de que llama-server calcule el offload
+    # automático. El orden inverso deja poca memoria contigua y provoca
+    # paginación WDDM, multiplicando la latencia TTS.
+    conversational = args.voice or args.panel_chat
     voice_stt = None
     voice_tts = None
     voice_presence = None
-    if args.voice:
-        from .audio import create_stt_provider, create_tts_provider
+    if conversational:
         from .control_center.presence import VoicePresenceClient
 
         voice_presence = VoicePresenceClient.discover(settings.project_dir)
-        print("Cargando STT y TTS locales…", flush=True)
         if voice_presence is not None:
             voice_presence.set_state("loading")
+    if args.voice:
+        from .audio import create_stt_provider, create_tts_provider
+
+        print("Cargando STT y TTS locales…", flush=True)
         try:
             voice_stt = create_stt_provider(settings)
             voice_tts = create_tts_provider(settings)
@@ -647,6 +656,18 @@ async def async_main(argv: list[str] | None = None) -> int:
                 await voice_tts.aclose()
             await embeddings.aclose()
             raise
+    elif args.panel_chat:
+        from .audio import (
+            LazySTTProvider,
+            LazyTTSProvider,
+            create_stt_provider,
+            create_tts_provider,
+        )
+
+        # El chat escrito no transcribe y casi nunca habla: STT y TTS se
+        # crean solo si un turno los necesita, sin ocupar CPU, RAM ni VRAM.
+        voice_stt = LazySTTProvider(lambda: create_stt_provider(settings))
+        voice_tts = LazyTTSProvider(lambda: create_tts_provider(settings))
 
     try:
         provider = await create_model_provider(
@@ -670,7 +691,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         provider=provider,
         registry=registry,
         executor=executor,
-        approval_callback=(deny_noninteractive_confirmation if args.voice else confirm_action),
+        approval_callback=(deny_noninteractive_confirmation if conversational else confirm_action),
         latency_log=default_latency_log(settings.data_dir),
     )
     session_id = database.create_session(project_id=project.id)
@@ -679,14 +700,17 @@ async def async_main(argv: list[str] | None = None) -> int:
         print(delta, end="", flush=True)
 
     try:
-        if args.voice:
+        if conversational:
             from .audio import (
+                LazyAudioPlayer,
+                NoMicrophoneRecorder,
                 SoundDevicePlayer,
                 SoundDeviceRecorder,
                 VoiceSessionManager,
                 VoiceState,
                 WindowsKeyChord,
                 run_push_to_talk_loop,
+                run_text_request_loop,
             )
             presence = voice_presence
 
@@ -722,12 +746,18 @@ async def async_main(argv: list[str] | None = None) -> int:
                 if presence is not None:
                     presence.set_error(message)
 
-            recorder = SoundDeviceRecorder(
-                selector=settings.audio_input_device,
-                target_sample_rate=settings.audio_sample_rate,
-                max_seconds=settings.audio_max_record_seconds,
-            )
-            player = SoundDevicePlayer(selector=settings.audio_output_device)
+            if args.voice:
+                recorder = SoundDeviceRecorder(
+                    selector=settings.audio_input_device,
+                    target_sample_rate=settings.audio_sample_rate,
+                    max_seconds=settings.audio_max_record_seconds,
+                )
+                player = SoundDevicePlayer(selector=settings.audio_output_device)
+            else:
+                recorder = NoMicrophoneRecorder()
+                player = LazyAudioPlayer(
+                    lambda: SoundDevicePlayer(selector=settings.audio_output_device)
+                )
             manager = VoiceSessionManager(
                 database=database,
                 orchestrator=orchestrator,
@@ -747,35 +777,53 @@ async def async_main(argv: list[str] | None = None) -> int:
                 on_text_delta=voice_delta,
                 on_error=voice_error,
             )
+            text_request_source = (
+                None
+                if presence is None
+                else lambda: asyncio.to_thread(presence.fetch_text_request, wait_seconds=5.0)
+            )
+            cancel_chord = WindowsKeyChord.parse(settings.audio_cancel_hotkey)
             try:
                 if presence is not None:
                     # VoiceSessionManager nace en IDLE, por lo que no emite una
                     # transición hasta el primer turno. La interfaz gráfica sí
                     # necesita conocer que el calentamiento ya terminó.
                     presence.set_state("idle")
-                print(
-                    f"Voz local lista — proyecto: {project.name}\n"
-                    f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
-                    f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
-                )
-                await run_push_to_talk_loop(
-                    manager,
-                    ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
-                    cancel=WindowsKeyChord.parse(settings.audio_cancel_hotkey),
-                    text_request_source=(
-                        None
-                        if presence is None
-                        else lambda: asyncio.to_thread(
-                            presence.fetch_text_request, wait_seconds=5.0
+                if args.voice:
+                    print(
+                        f"Voz local lista — proyecto: {project.name}\n"
+                        f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
+                        f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
+                    )
+                    await run_push_to_talk_loop(
+                        manager,
+                        ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
+                        cancel=cancel_chord,
+                        text_request_source=text_request_source,
+                    )
+                else:
+                    if text_request_source is None:
+                        print(
+                            "El chat del panel necesita el centro de control activo.",
+                            file=sys.stderr,
                         )
-                    ),
-                )
+                        await manager.close()
+                        return 1
+                    print(
+                        f"Chat del panel listo — proyecto: {project.name}\n"
+                        f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
+                    )
+                    await run_text_request_loop(
+                        manager,
+                        text_request_source=text_request_source,
+                        cancel=cancel_chord if os.name == "nt" else None,
+                    )
             except Exception as exc:
                 if presence is not None:
                     presence.set_error(str(exc))
                     presence.set_state("error")
-                # Si el fallo ocurrió durante warmup, el bucle PTT todavía no
-                # tuvo oportunidad de cerrar los proveedores y su worker.
+                # Si el fallo ocurrió durante warmup, el bucle todavía no tuvo
+                # oportunidad de cerrar los proveedores y su worker.
                 await manager.close()
                 raise
             finally:

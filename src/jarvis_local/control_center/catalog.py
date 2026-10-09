@@ -38,12 +38,18 @@ def _windows_executable(name: str, fallback: Path) -> Path:
     return Path(resolved).resolve() if resolved else fallback.resolve()
 
 
-def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
+def build_tool_catalog(
+    project_root: Path,
+    *,
+    voice_tts_provider: str = "chatterbox",
+    piper_voice_path: Path | None = None,
+) -> dict[str, ToolSpec]:
     """Construye el catálogo cerrado que sustituye los nueve accesos originales.
 
     No se acepta configuración de comandos desde HTTP ni desde documentos. Cada
     ejecutable, argumento y directorio de trabajo se define aquí y se valida al
-    iniciar la acción.
+    iniciar la acción. ``voice_tts_provider`` es el TTS que la voz usará de
+    verdad, para exigir solo los requisitos de ese motor.
     """
 
     root = project_root.resolve()
@@ -111,12 +117,22 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
         Requirement(core_python, "Entorno Python principal"),
         Requirement(config, "Configuración config\\jarvis.toml"),
     )
-    voice_requirements = core_requirements + (
-        Requirement(whisper_model, "Modelo faster-whisper-small"),
-        Requirement(clone_python, "Entorno aislado Chatterbox"),
-        Requirement(clone_model, "Modelo Chatterbox LatAm"),
-        Requirement(voice_reference, "Muestra de voz propia enrolada"),
-        Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
+    if voice_tts_provider == "piper":
+        piper_voice = piper_voice_path or (
+            root / "models" / "piper" / "es" / "es_MX" / "ald" / "medium" / "es_MX-ald-medium.onnx"
+        )
+        tts_requirements = (Requirement(piper_voice, "Voz Piper local"),)
+    else:
+        tts_requirements = (
+            Requirement(clone_python, "Entorno aislado Chatterbox"),
+            Requirement(clone_model, "Modelo Chatterbox LatAm"),
+            Requirement(voice_reference, "Muestra de voz propia enrolada"),
+            Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
+        )
+    voice_requirements = (
+        core_requirements
+        + (Requirement(whisper_model, "Modelo faster-whisper-small"),)
+        + tts_requirements
     )
 
     tools = (
@@ -141,6 +157,22 @@ def build_tool_catalog(project_root: Path) -> dict[str, ToolSpec]:
             source="JarvisLocal - Conversación por voz.lnk",
             requirements=voice_requirements,
             exclusive_groups=("core_runtime", "audio", "maintenance"),
+            visible_console=False,
+        ),
+        ToolSpec(
+            id="chat_runtime",
+            name="Chat del panel",
+            description=(
+                "Atiende los mensajes escritos del panel solo con el LLM. "
+                "No carga STT ni micrófono; la voz se carga solo si pides que hable."
+            ),
+            category="Asistente",
+            target=core_python,
+            arguments=("-m", "jarvis_local.cli", "--config", str(config), "--panel-chat"),
+            working_directory=root,
+            source="Centro de control — chat escrito",
+            requirements=core_requirements,
+            exclusive_groups=("core_runtime", "maintenance"),
             visible_console=False,
         ),
         script_tool(

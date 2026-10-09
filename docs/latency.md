@@ -17,12 +17,12 @@ TTS (Chatterbox, worker aislado) → reproducción WASAPI.
 
 | # | Problema | Evidencia | Estado |
 |---|---|---|---|
-| D1 | Con Chatterbox en CUDA, Qwen3-8B baja de 54,85 a 10,11 tokens/s (comparten 8 GB de VRAM; `--fit` descarga capas a CPU) | `benchmarks/results/qwen3-8b-q4_k_m-ctx8192.md`, `chatterbox-cuda-rtx5060.md` | Medido por el propietario. **Sin cambiar en Ref 1.0**: hay que decidirlo con el benchmark |
+| D1 | Con Chatterbox en CUDA, Qwen3-8B baja de ~55 a 5,6–7 tokens/s (comparten 8 GB de VRAM; `--fit` descarga capas a CPU) | Benchmark de Ref 1.0 en la RTX 5060 (ver abajo) | **Decidido**: GPU reservada al LLM; Piper en CPU como voz provisional |
 | D2 | El TTS esperaba la respuesta completa y alternaba síntesis y reproducción sin solapar | `audio/session.py` (antes) | **Corregido** |
 | D3 | Se ofrecían al modelo herramientas que la política deniega siempre (7 de 19 con los permisos por defecto) | `orchestrator.py` | **Corregido** |
 | D4 | La presencia publicaba por HTTP síncrono dentro del bucle de voz (hasta 0,35 s por actualización) | `control_center/presence.py` | **Corregido** |
 | D5 | No había trazas por ronda: se descartaban los *timings* de llama-server | `orchestrator.py` | **Corregido** |
-| D6 | El chat del panel requiere arrancar el proceso de voz completo (STT, TTS y LLM) | `server.py` `/api/chat` | Documentado; se abordará en Ref 2.0 |
+| D6 | El chat del panel requiere arrancar el proceso de voz completo (STT, TTS y LLM) | `server.py` `/api/chat` | **Corregido**: runtime de texto `--panel-chat` |
 
 ## Cambios de Ref 1.0
 
@@ -39,6 +39,46 @@ TTS (Chatterbox, worker aislado) → reproducción WASAPI.
 - **Esquemas filtrados:** solo se ofrecen las herramientas que el proyecto puede usar. La política sigue evaluando cada solicitud.
 - **Presencia no bloqueante:** un hilo emisor envía el estado más reciente. Los estados `error` y `offline` esperan su entrega, con un límite.
 - **Benchmark local** (`latency_benchmark.py`).
+
+## Mediciones en Windows 11 (RTX 5060 Laptop, 8 GB)
+
+Ejecutadas por el propietario el 9 de octubre de 2026 con la rama `claude/ref1-latency`
+(`f39438f`), 5 repeticiones en caliente. Medianas:
+
+| Medida | Texto, GPU libre | Voz, Chatterbox CUDA cargado |
+|---|---|---|
+| Velocidad del LLM | 54,8–56,5 tokens/s | 5,6–7,0 tokens/s |
+| Primer token, mensaje corto | 0,20 s | 0,86 s |
+| Primer token, con herramienta | 1,09 s | 7,45 s |
+| Respuesta larga completa | 12,5 s | 127 s |
+| Voz corta: primer audio / turno | — | 19,1 s / 33 s |
+| Voz larga | — | 5 de 5 turnos cortados a 120 s |
+| VRAM ocupada | 7313 MiB | 7679 de 8151 MiB |
+
+Una primera medición de texto con la GPU ya ocupada por otro proceso (7335 MiB antes de
+empezar) dio 17–22 tokens/s: el mismo efecto, por otra causa.
+
+## Decisión provisional del propietario (reparto de cómputo)
+
+| Servicio | Dispositivo |
+|---|---|
+| LLM (Qwen3-8B, llama-server) | GPU, con la VRAM reservada |
+| STT (faster-whisper) | CPU, solo en la conversación por voz |
+| TTS provisional (Piper) | CPU, cargado solo cuando hay que hablar |
+| Embeddings (RAG) | CPU (`gpu_layers = 0`), solo al indexar o consultar |
+| Chatterbox (voz propia) | Conservado; en la GPU solo con `voice_clone.allow_gpu = true` |
+
+- `config/jarvis.toml` usa `tts.provider = "piper"`.
+- Si se vuelve a elegir `chatterbox` con `device = "cuda"` sin `allow_gpu = true`, Mark usa
+  Piper en CPU y lo registra, en lugar de cargar Chatterbox en la GPU.
+- El chat escrito del panel arranca `--panel-chat`: solo el LLM. Si pides que hable,
+  carga Piper y la salida de audio en ese momento; nunca STT ni micrófono. Si la
+  conversación por voz está activa, ella atiende el chat; al iniciar la voz, el runtime
+  de texto se detiene para no cargar el modelo dos veces.
+- La importación de referencias de voz y el enrolamiento no cambian.
+
+Esta configuración **no se ha medido todavía en el equipo**: la mejora esperada es una
+deducción de las mediciones anteriores, no un resultado.
 
 ## Evidencia obtenida en la nube (no es hardware real)
 
@@ -93,16 +133,17 @@ set "PYTHONPATH=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1\src"
 .venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile text --repeat 5
 ```
 
-7. Perfil de voz actual, Chatterbox en CUDA junto al LLM:
+7. Perfil de voz con la voz provisional, Piper en CPU (si tu configuración pide Chatterbox
+   CUDA sin `allow_gpu`, el benchmark también usará Piper e informará `piper / cpu`):
 
 ```cmd
-.venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile voice --repeat 5
+.venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile voice --tts-provider piper --repeat 5
 ```
 
-8. Opcional, TTS de clonación en CPU para comparar el reparto de recursos (lento; 3 repeticiones bastan):
+8. Opcional, para comparar: Chatterbox en CUDA (la opción autoriza la GPU solo para esta medición):
 
 ```cmd
-.venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile voice --tts-device cpu --repeat 3
+.venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile voice --tts-provider chatterbox --tts-device cuda --repeat 5
 ```
 
 9. Prueba real con la voz progresiva, usando el PTT habitual (Ctrl+C para terminar):
@@ -126,7 +167,8 @@ set PYTHONPATH=
 
 ## Limitaciones conocidas
 
-- La decisión de reparto GPU/CPU (D1) **no se cambió**: requiere tus mediciones.
+- La voz Piper no es la voz propia: es una solución temporal hasta optimizar Chatterbox.
+- Pendiente de comprobar en Windows: latencia real con Piper y el chat del panel con `--panel-chat`.
 - En el escenario `text_tool`, el benchmark ejecuta una herramienta de solo lectura (`get_current_time`).
 - El benchmark no carga RAG. Las herramientas de RAG no aparecen en sus esquemas.
 - Si el LLM incluye texto antes de llamar a una herramienta, ese texto también se pronuncia.
