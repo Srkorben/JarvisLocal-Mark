@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import time
+from datetime import datetime, timezone
 from collections.abc import Awaitable, Callable
 
 from ..cancellation import CancellationController, CancellationToken, OperationCancelled
 from ..database import Database
+from ..latency import LatencyLog, TurnTrace
 from ..models import ProjectRecord
 from ..orchestrator import Orchestrator
 from .base import AudioError, AudioPlayer, AudioRecorder, STTProvider, TTSProvider
 from .hotkey import WindowsKeyChord
+from .speech_stream import SpeechPipeline
 from .models import VoiceState, VoiceTurnMetrics, VoiceTurnResult
 
 
@@ -62,6 +64,7 @@ class VoiceSessionManager:
         on_transcript: TextCallback | None = None,
         on_text_delta: TextCallback | None = None,
         on_error: TextCallback | None = None,
+        latency_log: LatencyLog | None = None,
     ) -> None:
         self.database = database
         self.orchestrator = orchestrator
@@ -80,6 +83,9 @@ class VoiceSessionManager:
         self.on_transcript = on_transcript
         self.on_text_delta = on_text_delta
         self.on_error = on_error
+        self.latency_log = latency_log or getattr(
+            orchestrator, "latency_log", None
+        ) or LatencyLog(None)
         self._state = VoiceState.IDLE
         self._lock = asyncio.Lock()
         self._token: CancellationToken | None = None
@@ -135,7 +141,7 @@ class VoiceSessionManager:
             return self._turn_task
 
     async def submit_text(
-        self, text: str, *, speak: bool = True
+        self, text: str, *, speak: bool = True, queued_seconds: float | None = None
     ) -> asyncio.Task[VoiceTurnResult] | None:
         """Procesa texto de la UI con la misma sesión, autoridad y voz del PTT."""
 
@@ -159,7 +165,7 @@ class VoiceSessionManager:
                 self.on_transcript(normalized)
             self._transition(VoiceState.PROCESSING)
             self._turn_task = asyncio.create_task(
-                self._run_text_turn(normalized, speak=speak),
+                self._run_text_turn(normalized, speak=speak, queued_seconds=queued_seconds),
                 name="jarvis-text-ui-turn",
             )
             return self._turn_task
@@ -208,6 +214,16 @@ class VoiceSessionManager:
         await self.tts.aclose()
 
     async def _run_turn(self, audio, pipeline_started: float) -> VoiceTurnResult:
+        trace = TurnTrace(interface="push_to_talk")
+        trace.set(captured_audio_seconds=round(audio.duration_seconds, 3))
+        try:
+            return await self._run_voice_turn(audio, pipeline_started, trace)
+        finally:
+            self._write_trace(trace)
+
+    async def _run_voice_turn(
+        self, audio, pipeline_started: float, trace: TurnTrace
+    ) -> VoiceTurnResult:
         token = self._token or self.cancellation.current
         metrics = VoiceTurnMetrics(
             captured_audio_seconds=audio.duration_seconds,
@@ -239,37 +255,15 @@ class VoiceSessionManager:
                 if self.on_transcript is not None:
                     self.on_transcript(transcription.text)
                 self._transition(VoiceState.PROCESSING)
-
-                first_delta_at: float | None = None
-
-                def text_delta(delta: str) -> None:
-                    nonlocal first_delta_at
-                    if first_delta_at is None:
-                        first_delta_at = time.monotonic()
-                    if self.on_text_delta is not None:
-                        self.on_text_delta(delta)
-
-                model_started = time.monotonic()
-                response = await self.orchestrator.chat(
-                    self.session_id,
-                    self.project,
+                trace.mark("stt_done")
+                response = await self._respond(
                     transcription.text,
                     token,
-                    on_text_delta=text_delta,
+                    metrics,
+                    pipeline_started,
+                    trace,
+                    speak=True,
                 )
-                metrics.model_response_seconds = time.monotonic() - model_started
-                metrics.first_token_seconds = (
-                    None if first_delta_at is None else first_delta_at - pipeline_started
-                )
-                metrics.response_characters = len(response)
-                token.raise_if_cancelled()
-                self._transition(VoiceState.SPEAKING)
-                for sentence in _speech_sentences(response):
-                    spoken = await self.tts.synthesize(sentence, token)
-                    metrics.synthesis_seconds += spoken.synthesis_seconds
-                    if metrics.first_audio_seconds is None:
-                        metrics.first_audio_seconds = time.monotonic() - pipeline_started
-                    metrics.playback_seconds += await self.player.play(spoken, token)
                 metrics.total_seconds = time.monotonic() - self._turn_started
                 result = VoiceTurnResult(
                     outcome="success",
@@ -302,43 +296,30 @@ class VoiceSessionManager:
         finally:
             self._turn_task = None
 
-    async def _run_text_turn(self, text: str, *, speak: bool) -> VoiceTurnResult:
+    async def _run_text_turn(
+        self, text: str, *, speak: bool, queued_seconds: float | None = None
+    ) -> VoiceTurnResult:
+        trace = TurnTrace(interface="control_center_text")
+        trace.set(
+            speak=speak,
+            queue_wait_seconds=None if queued_seconds is None else round(queued_seconds, 3),
+        )
+        try:
+            return await self._run_text_turn_traced(text, speak=speak, trace=trace)
+        finally:
+            self._write_trace(trace)
+
+    async def _run_text_turn_traced(
+        self, text: str, *, speak: bool, trace: TurnTrace
+    ) -> VoiceTurnResult:
         token = self._token or self.cancellation.current
         pipeline_started = time.monotonic()
         metrics = VoiceTurnMetrics(transcript_characters=len(text))
         try:
             async with asyncio.timeout(self.max_turn_seconds):
-                first_delta_at: float | None = None
-
-                def text_delta(delta: str) -> None:
-                    nonlocal first_delta_at
-                    if first_delta_at is None:
-                        first_delta_at = time.monotonic()
-                    if self.on_text_delta is not None:
-                        self.on_text_delta(delta)
-
-                model_started = time.monotonic()
-                response = await self.orchestrator.chat(
-                    self.session_id,
-                    self.project,
-                    text,
-                    token,
-                    on_text_delta=text_delta,
+                response = await self._respond(
+                    text, token, metrics, pipeline_started, trace, speak=speak
                 )
-                metrics.model_response_seconds = time.monotonic() - model_started
-                metrics.first_token_seconds = (
-                    None if first_delta_at is None else first_delta_at - pipeline_started
-                )
-                metrics.response_characters = len(response)
-                token.raise_if_cancelled()
-                if speak:
-                    self._transition(VoiceState.SPEAKING)
-                    for sentence in _speech_sentences(response):
-                        spoken = await self.tts.synthesize(sentence, token)
-                        metrics.synthesis_seconds += spoken.synthesis_seconds
-                        if metrics.first_audio_seconds is None:
-                            metrics.first_audio_seconds = time.monotonic() - pipeline_started
-                        metrics.playback_seconds += await self.player.play(spoken, token)
                 metrics.total_seconds = time.monotonic() - self._turn_started
                 result = VoiceTurnResult(
                     outcome="success",
@@ -378,6 +359,98 @@ class VoiceSessionManager:
             )
         finally:
             self._turn_task = None
+
+    async def _respond(
+        self,
+        text: str,
+        token: CancellationToken,
+        metrics: VoiceTurnMetrics,
+        pipeline_started: float,
+        trace: TurnTrace,
+        *,
+        speak: bool,
+    ) -> str:
+        """Ejecuta el LLM y, si procede, habla mientras genera.
+
+        La primera frase completa se sintetiza sin esperar al resto de la
+        respuesta, y la síntesis de la siguiente se solapa con la reproducción
+        de la actual. Un fallo o una cancelación detienen ambas colas.
+        """
+
+        def first_audio() -> None:
+            trace.mark("first_audio")
+            if self._state is VoiceState.PROCESSING and not token.is_cancelled:
+                self._transition(VoiceState.SPEAKING)
+
+        pipeline = (
+            SpeechPipeline(
+                tts=self.tts,
+                player=self.player,
+                cancellation=token,
+                on_first_audio=first_audio,
+            )
+            if speak
+            else None
+        )
+        first_delta_at: float | None = None
+
+        def text_delta(delta: str) -> None:
+            nonlocal first_delta_at
+            if first_delta_at is None:
+                first_delta_at = time.monotonic()
+            if self.on_text_delta is not None:
+                self.on_text_delta(delta)
+            if pipeline is not None:
+                pipeline.feed(delta)
+
+        model_started = time.monotonic()
+        try:
+            response = await self.orchestrator.chat(
+                self.session_id,
+                self.project,
+                text,
+                token,
+                on_text_delta=text_delta,
+                trace=trace,
+            )
+            metrics.model_response_seconds = time.monotonic() - model_started
+            metrics.first_token_seconds = (
+                None if first_delta_at is None else first_delta_at - pipeline_started
+            )
+            metrics.response_characters = len(response)
+            token.raise_if_cancelled()
+            if pipeline is not None:
+                final = response.strip()
+                # Mensajes del orquestador que no pasaron por streaming (límite
+                # de rondas, respuesta vacía) también deben pronunciarse.
+                if final and final not in pipeline.fed_text:
+                    pipeline.feed(("\n" if pipeline.fed_text else "") + final)
+                await pipeline.finish()
+        except BaseException:
+            if pipeline is not None:
+                await pipeline.abort()
+            raise
+        finally:
+            if pipeline is not None:
+                metrics.synthesis_seconds = pipeline.synthesis_seconds
+                metrics.playback_seconds = pipeline.playback_seconds
+                if pipeline.first_audio_at is not None:
+                    metrics.first_audio_seconds = pipeline.first_audio_at - pipeline_started
+                trace.set(
+                    sentences_spoken=pipeline.sentences,
+                    synthesis_seconds=round(pipeline.synthesis_seconds, 3),
+                    playback_seconds=round(pipeline.playback_seconds, 3),
+                )
+        return response
+
+    def _write_trace(self, trace: TurnTrace) -> None:
+        trace.mark("done")
+        if self.last_result is not None:
+            trace.set(
+                outcome=self.last_result.outcome,
+                stt_seconds=self.last_result.metrics.transcription_seconds,
+            )
+        self.latency_log.write(trace)
 
     async def _finish_ignored(
         self, outcome: str, metrics: VoiceTurnMetrics, error: str
@@ -494,7 +567,9 @@ async def run_push_to_talk_loop(
                 text_request_task = None
             if pending_text is not None and manager.state is VoiceState.IDLE:
                 accepted = await manager.submit_text(
-                    str(pending_text["text"]), speak=pending_text.get("speak") is not False
+                    str(pending_text["text"]),
+                    speak=pending_text.get("speak") is not False,
+                    queued_seconds=_seconds_since(pending_text.get("submitted_at")),
                 )
                 if accepted is not None:
                     pending_text = None
@@ -508,8 +583,15 @@ async def run_push_to_talk_loop(
         await manager.close()
 
 
-def _speech_sentences(text: str) -> tuple[str, ...]:
-    plain = re.sub(r"\[([^\]]+)\]\([^\)]+\)", r"\1", text)
-    plain = re.sub(r"[`*_#>]", "", plain)
-    pieces = [item.strip() for item in re.split(r"(?<=[.!?])\s+|\n+", plain)]
-    return tuple(item for item in pieces if item)
+def _seconds_since(timestamp: object) -> float | None:
+    """Espera en cola de una solicitud del panel (reloj de pared compartido)."""
+
+    if not isinstance(timestamp, str):
+        return None
+    try:
+        submitted = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+    if submitted.tzinfo is None:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - submitted).total_seconds())

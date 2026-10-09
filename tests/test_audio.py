@@ -150,7 +150,7 @@ class FakeOrchestrator:
         self.wait_for_cancel = wait_for_cancel
         self.calls: list[tuple[str, str]] = []
 
-    async def chat(self, session_id, project, text, cancellation, on_text_delta=None):
+    async def chat(self, session_id, project, text, cancellation, on_text_delta=None, trace=None):
         self.calls.append((project.id, text))
         if self.wait_for_cancel:
             await cancellation.wait()
