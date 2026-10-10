@@ -1,6 +1,61 @@
 # Mark / JarvisLocal: documento de transferencia
 
-Última actualización: 10 de octubre de 2026 (cierre de la segunda sesión). Sirve para continuar desde otra sesión de Claude Code sin repetir las investigaciones.
+Última actualización: 10 de octubre de 2026 (entrega Codex del monitor Núcleo).
+Este documento permite continuar sin depender de las conversaciones anteriores.
+
+## 0. Entrega publicada por Codex
+
+GitHub se tomó como fuente canónica. La rama remota
+`claude/ref2-chat-ui` terminaba en `e979b9c`; las modificaciones no confirmadas de
+la última sesión de Claude Code no estaban disponibles en el repositorio ni en los
+árboles inspeccionados. Por tanto, **Codex reconstruyó** el monitor y la integración
+descritos en la delegación; no afirma haber recuperado archivos inexistentes.
+
+Implementación técnica: `90f484c` (`feat(control-center): add live core monitor`).
+La rama publicada continúa siendo `claude/ref2-chat-ui`, apilada sobre
+`claude/ref1-latency`; el PR #2 conserva esa relación. `master` permanece en
+`bd4a876` y no fue fusionado ni modificado.
+
+### Resultado de esta entrega
+
+- `system_status.py`: monitor local de CPU/RAM y GPU/VRAM NVIDIA, caché de dos
+  segundos, timeout de 800 ms, fallos explícitos y sin cargar modelos.
+- `GET /api/system`: autenticación por cookie, `Cache-Control: no-store` y
+  respuesta sin PID, comandos, credenciales ni rutas privadas.
+- Panel **Núcleo** dentro del chat: modelo configurado, runtimes de texto/voz,
+  métricas y controles reales sobre el `ProcessManager` existente.
+- Estados con precedencia segura y rechazo de revisiones antiguas de presencia.
+- Bind exclusivo en Windows para evitar que dos copias compartan un puerto.
+- Corrección de la prueba de catálogo mediante un ejecutable sintético; conserva
+  las once entradas y ya no depende del software instalado en el host de CI.
+
+Validación de la entrega: **159 pruebas y 9 subtests aprobados**, comprobación de
+JavaScript con Node aprobada y `git diff --check` aprobado tras la documentación.
+En Windows se verificó la lectura real de una RTX 5060 Laptop y en Chromium se
+probaron apertura/cierre del panel, Escape, transiciones texto→voz→detenido y
+ausencia de procesos duplicados. **No se declara validación en WPF/WebView2**: esa
+prueba permanece pendiente en el equipo del propietario después de recuperar la
+rama.
+
+El hallazgo de privacidad **H-01** permanece abierto: no se debe añadir historial
+persistente hasta que `store_conversation_content = false` impida realmente guardar
+contenido en SQLite. No se modificó la instalación principal ni su configuración.
+
+### Recuperación segura con GitHub Desktop
+
+`Fetch origin` solo descarga referencias y commits; no cambia los archivos del
+directorio de trabajo. Para no afectar la instalación principal, la opción segura
+es clonar `Srkorben/JarvisLocal-Mark` en una carpeta de desarrollo distinta,
+seleccionar `claude/ref2-chat-ui`, ejecutar **Fetch origin** y después **Pull
+origin**. No hacer Checkout/Pull sobre
+`C:\Users\andcb\Documents\AI Local\JarvisLocal` hasta decidir expresamente instalar
+la rama y respaldar `config/jarvis.toml` y `data/`.
+
+Próximas prioridades de Ref 2.0: validar el panel en WPF/WebView2, resolver H-01,
+probar las herramientas reales permitidas desde el chat y, solo después, diseñar
+historial recuperable de sesión. El trabajo temporal de Codex puede eliminarse una
+vez verificados los commits remotos porque no contiene artefactos necesarios que
+no estén en GitHub.
 
 ## 1. Estado real
 
@@ -17,13 +72,13 @@ Commits finales:
 | Rama | Commit | Descripción |
 |---|---|---|
 | `claude/ref1-latency` | `4ca4bd1` | Último commit de Ref 1.0 (resultados de Piper) |
-| `claude/ref2-chat-ui` | `741ad7f` | Markdown seguro, chat ampliable y protección de revisiones |
+| `claude/ref2-chat-ui` | `90f484c` | Monitor Núcleo, endpoint autenticado y panel de recursos |
 | `master` | `bd4a876` | Sin cambios |
 
 La instalación del propietario (`C:\Users\andcb\Documents\AI Local\JarvisLocal`) está en `master` y sin cambios locales; se comprobó con `git status`. **No hay interfaz local sin publicar.**
 
 - **PR [Srkorben/JarvisLocal-Mark#1](https://github.com/Srkorben/JarvisLocal-Mark/pull/1)**: borrador, `claude/ref1-latency` → `master`. **No fusionar sin aprobación del propietario.**
-- `claude/ref2-chat-ui`: PR #2 en borrador hacia `claude/ref1-latency`, si se pudo abrir al cierre; si no, abrirlo así para que la dependencia quede clara.
+- **PR [Srkorben/JarvisLocal-Mark#2](https://github.com/Srkorben/JarvisLocal-Mark/pull/2)**: borrador, `claude/ref2-chat-ui` → `claude/ref1-latency`. No fusionar todavía.
 - La rama experimental de voz `claude/jarvislocal-mark-ahioni`, con los ajustes de acento, sigue aislada y **no se incorpora**. La condición `accent_source=model` es defectuosa.
 
 ## 2. Ref 1.0: qué se completó
@@ -127,6 +182,12 @@ Procede de la auditoría del 9 de octubre (`docs/` en la rama `claude/jarvisloca
   - El historial recuperable del chat **no debe construirse** hasta respetar ese indicador. Opción de diseño: historial solo en memoria del runtime, o persistencia únicamente si el usuario la activa.
 
 ## 4. Archivos modificados
+
+- **Monitor Núcleo (Codex, `90f484c`)**:
+  - `src/jarvis_local/control_center/system_status.py`;
+  - `src/jarvis_local/control_center/{launcher,server,web}.py`;
+  - `tests/test_system_status.py` y `tests/test_control_center.py`;
+  - `README.md`, `PROJECT_STATUS.md`, `docs/control-center.md` y ADR 0018.
 
 - **Ref 1.0**:
   - `src/jarvis_local/`: `latency.py`, `latency_benchmark.py`, `orchestrator.py`, `projects.py`, `tools/registry.py`, `cli.py` y `config.py`.

@@ -1,6 +1,6 @@
 # ADR 0018 — Monitor local del núcleo con caché y estado compuesto
 
-Fecha: 2026-10-10  
+Fecha: 2026-10-10
 Estado: aceptada
 
 ## Contexto
