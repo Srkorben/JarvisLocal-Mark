@@ -1,6 +1,6 @@
 # Mark / JarvisLocal: documento de transferencia
 
-Última actualización: 10 de octubre de 2026. Sirve para continuar desde otra sesión de Claude Code sin repetir las investigaciones.
+Última actualización: 10 de octubre de 2026 (cierre de la segunda sesión). Sirve para continuar desde otra sesión de Claude Code sin repetir las investigaciones.
 
 ## 1. Estado real
 
@@ -12,8 +12,18 @@
 | `claude/ref1-latency` | Ref 1.0: latencia, reparto de GPU, runtime de texto y benchmark | `master` (`bd4a876`) |
 | `claude/ref2-chat-ui` | Ref 2.0: chat escrito en el centro de control | `claude/ref1-latency` (necesita `--panel-chat`) |
 
+Commits finales:
+
+| Rama | Commit | Descripción |
+|---|---|---|
+| `claude/ref1-latency` | `4ca4bd1` | Último commit de Ref 1.0 (resultados de Piper) |
+| `claude/ref2-chat-ui` | `741ad7f` | Markdown seguro, chat ampliable y protección de revisiones |
+| `master` | `bd4a876` | Sin cambios |
+
+La instalación del propietario (`C:\Users\andcb\Documents\AI Local\JarvisLocal`) está en `master` y sin cambios locales; se comprobó con `git status`. **No hay interfaz local sin publicar.**
+
 - **PR [Srkorben/JarvisLocal-Mark#1](https://github.com/Srkorben/JarvisLocal-Mark/pull/1)**: borrador, `claude/ref1-latency` → `master`. **No fusionar sin aprobación del propietario.**
-- `claude/ref2-chat-ui` todavía no tiene PR. Si se abre, conviene basarlo en `claude/ref1-latency` o abrirlo cuando el PR #1 se haya fusionado.
+- `claude/ref2-chat-ui`: PR #2 en borrador hacia `claude/ref1-latency`, si se pudo abrir al cierre; si no, abrirlo así para que la dependencia quede clara.
 - La rama experimental de voz `claude/jarvislocal-mark-ahioni`, con los ajustes de acento, sigue aislada y **no se incorpora**. La condición `accent_source=model` es defectuosa.
 
 ## 2. Ref 1.0: qué se completó
@@ -73,6 +83,49 @@ El propietario quiere que la importación de la voz de unos 20 s se haga **desde
 - La conversación no se guarda en el navegador.
 - La política de herramientas no cambia: el runtime de texto deniega las confirmaciones interactivas.
 
+### Validación real en Windows 11 (sesión 2, con Qwen3-8B)
+
+Montaje experimental, **sin tocar la instalación**:
+- carpeta `JarvisLocal-ref1` en la rama `claude/ref2-chat-ui`;
+- enlaces `mklink /J` a `.venv`, `models` y `runtime` de la instalación;
+- `set PYTHONPATH=...\JarvisLocal-ref1\src`;
+- `.venv\Scripts\python.exe -m jarvis_local.control_center --launch`.
+
+La raíz efectiva es `JarvisLocal-ref1`, con base de datos y registros propios en `JarvisLocal-ref1\data`.
+
+| Prueba | Resultado |
+|---|---|
+| El panel abre con el chat (navegador, puerto 8765) | ✅ |
+| Mensaje corto con Qwen real | ✅ Respondió en 2–3 s, incluido el arranque del núcleo de texto |
+| Respuesta larga en streaming y Cancelar | ✅ Se detuvo a mitad de frase: "Cancelado · 2.0 s" |
+| Markdown | ❌ Se veía en bruto (`**Planificación**`). Corregido en `741ad7f`, **pendiente de revalidar en Windows** |
+| Herramientas `get_current_time` y `list_directory` | ⏳ **No probadas en real** |
+| App WPF/WebView2 | ⏳ **No probada** |
+
+### Mejoras de la sesión 2 (`741ad7f`)
+
+- **Markdown seguro:** negritas, cursivas, código en línea, listas, títulos, párrafos y bloques de código.
+  - Solo usa `createElement`/`textContent`, nunca `innerHTML`.
+  - El HTML que llegue en una respuesta se muestra como texto.
+  - No interpreta `_x_` ni `__x__`, para no romper nombres como `get_current_time`.
+- **Chat ampliable:** botón "Ampliar/Reducir" de hasta 980 px que atenúa el núcleo y recuerda la preferencia. Al cerrar el chat vuelve el diseño original. La columna izquierda de módulos se oculta solo con el chat abierto.
+- **Estabilidad:**
+  - El turno ignora revisiones de presencia anteriores a su envío, así que un mensaje repetido no se cierra con la respuesta anterior.
+  - Las actualizaciones vacías no borran el texto ya generado.
+- **Texto de estado:** sin núcleo, el estado ya no exige iniciar la voz.
+- **Verificado en Chromium** (Playwright, servidor real del panel y runtime simulado):
+  - streaming, cancelación y error;
+  - Markdown y texto malicioso: 0 `<img>`, 0 `<script>`, `window.__xss` sin definir;
+  - mensaje repetido y modo ampliado.
+
+### Hallazgo de privacidad H-01 (sin corregir)
+
+Procede de la auditoría del 9 de octubre (`docs/` en la rama `claude/jarvislocal-mark-ahioni`, commit `5f921b9`).
+- **El problema:** `logging.store_conversation_content = false` **no tiene efecto**. Las conversaciones (`database.py`, mensajes) y las intenciones se guardan **en claro** en SQLite.
+- **Consecuencias:**
+  - Hay que corregirlo antes de considerar fiable cualquier historial persistente.
+  - El historial recuperable del chat **no debe construirse** hasta respetar ese indicador. Opción de diseño: historial solo en memoria del runtime, o persistencia únicamente si el usuario la activa.
+
 ## 4. Archivos modificados
 
 - **Ref 1.0**:
@@ -89,7 +142,7 @@ El propietario quiere que la importación de la voz de unos 20 s se haga **desde
 
 ## 5. Pruebas y errores conocidos
 
-- **Linux (nube):** 153 pasan y 1 falla.
+- **Linux (nube), en `741ad7f`:** 154 pasan y 1 falla.
 - **La que falla:** `CatalogTests::test_catalog_preserves_nine_shortcuts_and_adds_3d_integration`.
   - Exige ejecutables de Windows y Godot. Ya fallaba en `master` y también falla en la CI de Windows.
   - Su corrección pertenece a I-1.1, **no autorizada**. No convertirla en SKIP sin aprobación.
@@ -116,6 +169,15 @@ python -m pytest -q
 - **Para ver el chat sin Windows:** levantar `ControlCenterHTTPServer` con un `ProcessManager` falso y un runtime simulado que consuma `/api/chat/next` con el token de portador y publique la presencia completa, como hace `VoicePresenceClient`. Abrir `/?token=…` en un navegador.
 - **Atención:** la presencia **reemplaza** todo el estado en cada `POST`; hay que enviar siempre `state`, `transcript`, `response` y `error`.
 - **Instrucciones de terminal para el propietario:** bloques `cmd`, un comando por paso, esperando su resultado.
+
+## 7 bis. Defectos y pendientes conocidos del chat
+
+1. Revalidar en Windows el Markdown con Qwen real.
+2. Probar en real las herramientas `get_current_time` y `list_directory`, y una que requiera confirmación, como `open_file`. El runtime de texto deniega las confirmaciones: comprobar que el mensaje se entiende.
+3. Probar la app WPF con `set JARVISLOCAL_ROOT=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1` y `runtime\desktop\JarvisLocal.exe` en la misma consola con `PYTHONPATH`.
+4. "Responder también con voz" usa Piper, cuya voz fue rechazada.
+5. Sin historial: al recargar la página se pierde la conversación visible, aunque el núcleo mantiene la sesión. Antes de construirlo hay que corregir H-01.
+6. Una respuesta muy larga se re-renderiza completa en cada actualización (cada 250 ms). Es aceptable hasta unos 16 KB, el límite de presencia.
 
 ## 8. Primera tarea concreta de la siguiente sesión
 
