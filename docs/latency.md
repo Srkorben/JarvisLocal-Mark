@@ -80,6 +80,32 @@ empezar) dio 17–22 tokens/s: el mismo efecto, por otra causa.
 Esta configuración **no se ha medido todavía en el equipo**: la mejora esperada es una
 deducción de las mediciones anteriores, no un resultado.
 
+## Prueba A en Windows 11: Piper en CPU (10 de octubre de 2026)
+
+Rama `c9a268b`, 3 repeticiones en caliente (2 en la respuesta larga). Medianas:
+
+| Medida | Chatterbox CUDA (línea base) | Piper CPU |
+|---|---|---|
+| LLM, mensaje de texto | 7,0 tokens/s | 53,8 tokens/s |
+| LLM durante un turno de voz | 2,2 tokens/s | 46,2–46,6 tokens/s |
+| Primer audio, voz corta | 19,1 s | 7,2 s |
+| Turno de voz corto | 33,1 s | 11,6 s |
+| Primer audio, voz larga | — | 9,0 s |
+| Turnos largos completados | 0 de 5 | 2 de 2 (103,5 s, casi todo reproducción) |
+| Carga del TTS | 105 s | 1,6 s |
+| RAM del proceso Python | — | ~650 MiB |
+| VRAM total | 7679 MiB | 7134–7519 MiB |
+
+- El nuevo cuello de botella del turno de voz es el **STT**: 5,7 s de los 7,2 s del primer audio.
+- **Calidad**: el propietario rechazó la voz Piper `es_MX-ald` ("horrible"). Piper es rápido,
+  pero esa voz no sirve ni como provisional, y no admite una referencia importada.
+- El límite de 120 s por turno incluye la reproducción: una respuesta hablada muy larga
+  puede cortarse aunque todo vaya rápido.
+
+**Pendiente (no ejecutado):** prueba B, Chatterbox en CPU con la referencia autorizada; la
+comparación de neutralidad del acento; ajustar el STT (`beam_size`); separar el límite de
+generación del de reproducción.
+
 ## Evidencia obtenida en la nube (no es hardware real)
 
 | Comprobación | Antes (`bd4a876`) | Después |
