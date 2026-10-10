@@ -166,7 +166,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .msg .who {{ display:block; margin:0 0 4px; }}
     .msg.user {{ align-self:flex-end; border-color:#23667a; background:#0a2029; color:#dff8ff; }}
     .msg.mark {{ align-self:flex-start; color:#effdff; }}
-    .msg.pending .body::after {{ content:'▍'; color:var(--cyan); animation:blink 1s steps(1) infinite; }}
+    .msg.pending .body:empty::after,.msg.pending .body > :last-child::after {{ content:'▍'; color:var(--cyan); animation:blink 1s steps(1) infinite; }}
     .msg.failed {{ border-color:#6b3434; background:#1c0c0c; color:#f3c0c0; }}
     .msg .meta {{ display:block; margin-top:6px; color:#5d7f89; font-size:10px; letter-spacing:.06em; }}
     .chat-status {{ min-height:20px; padding:0 14px; color:#7fb6c3; font-size:11px; letter-spacing:.04em; }}
@@ -179,6 +179,24 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .chat-row label {{ flex:1; color:#86a9b3; font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer; }}
     .chat-row .primary,.chat-row .stop {{ padding:9px 13px; }}
     @keyframes blink {{ 50% {{ opacity:0; }} }}
+    body.chat-open .stage > .telemetry:first-child {{ visibility:hidden; }}
+    body.chat-wide #chat {{ width:min(980px,calc(100vw - 24px)); }}
+    body.chat-wide .core-wrap {{ opacity:.3; }}
+    #chatWide {{ border:1px solid #1b4452; background:transparent; color:#8cb0bb; cursor:pointer;
+      font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:2px; }}
+    #chatWide:hover,#chatWide:focus-visible {{ color:white; border-color:var(--cyan); outline:none; }}
+    .msg.mark .body {{ display:block; white-space:normal; }}
+    .msg.mark .body p {{ margin:0 0 .6em; }}
+    .msg.mark .body > :last-child {{ margin-bottom:0; }}
+    .msg.mark .body ul,.msg.mark .body ol {{ margin:.2em 0 .6em; padding-left:1.35em; }}
+    .msg.mark .body li {{ margin:.18em 0; }}
+    .msg.mark .body strong {{ color:#ffffff; font-weight:600; }}
+    .msg.mark .body .md-h {{ color:#9eeeff; font-weight:600; letter-spacing:.02em; }}
+    .msg.mark .body code {{ font-family:Consolas,"Cascadia Mono",monospace; font-size:.92em; background:#0b2530;
+      border:1px solid #17404d; padding:0 4px; border-radius:2px; }}
+    .msg.mark .body pre {{ margin:.3em 0 .7em; padding:9px 10px; overflow-x:auto; background:#030b0f;
+      border:1px solid #17404d; white-space:pre; }}
+    .msg.mark .body pre code {{ background:transparent; border:0; padding:0; }}
     @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
     @keyframes spin-rev {{ to {{ transform:rotate(-360deg); }} }}
     @keyframes breathe {{ to {{ transform:scale(1.1); }} }}
@@ -230,6 +248,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 </div>
 <section id="chat" aria-label="Conversación escrita con Mark">
   <div class="chat-head"><h2>Conversación</h2><span id="chatRuntime">Núcleo apagado</span>
+    <button id="chatWide" type="button" aria-pressed="false" title="Ampliar o reducir el área de conversación">Ampliar</button>
     <button id="chatClose" class="close" type="button" aria-label="Cerrar chat">×</button></div>
   <div id="chatLog" class="chat-log" aria-live="polite"><p class="chat-empty">Escribe una instrucción para Mark.
     El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación de esta ventana no se guarda en el navegador.</p></div>
@@ -263,7 +282,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 <div id="notice" role="status"></div>
 <script nonce="{safe_nonce}">
 const csrf="{csrf}";
-const stateText={{offline:["Sistema desconectado","Inicia el núcleo de voz para comenzar"],loading:["Inicializando","Cargando modelos locales de voz"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
+const stateText={{offline:["Sistema desconectado","Escribe en el chat o inicia la voz para comenzar"],loading:["Inicializando","Cargando modelos locales de voz"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
 recording:["Escuchando","Suelta la combinación para enviar"],transcribing:["Interpretando voz","Transcripción local en curso"],
 processing:["Procesando","Consultando el núcleo local"],speaking:["Respondiendo","Síntesis de voz activa"],
 cancelling:["Cancelando","Interrumpiendo el turno actual"],error:["Incidencia detectada","Consulta el detalle en pantalla"]}};
@@ -281,7 +300,8 @@ if(!response.ok)throw new Error(data.error?.message||"La acción falló.");retur
 function effectiveQuality(){{if(document.hidden)return "paused";if(visualQuality!=="auto")return visualQuality;
 return ["processing","transcribing","loading"].includes(currentState)?"eco":"balanced";}}
 function applyVisualQuality(){{document.body.dataset.quality=effectiveQuality();}}
-function setPresence(p){{const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
+let lastPresenceRevision=-1;
+function setPresence(p){{if(typeof p.revision==="number")lastPresenceRevision=p.revision;const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
 const copy=stateText[currentState]||stateText.offline;$("stateTitle").textContent=copy[0];$("stateHint").textContent=p.error||copy[1];
 $("transcript").textContent=p.transcript||"";$("response").textContent=p.response||"";
 $("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));chatPresence(p);}}
@@ -354,8 +374,29 @@ const body=document.createElement("span");body.className="body";body.textContent
 chatLog.scrollTop=chatLog.scrollHeight;return msg;}}
 function chatMeta(msg,text){{const meta=document.createElement("span");meta.className="meta";meta.textContent=text;msg.append(meta);}}
 function chatButtons(){{$("chatSend").disabled=Boolean(turn);$("chatCancel").disabled=!turn||turn.cancelRequested;}}
-function chatSetText(text){{if(!turn)return;const near=chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60;
-turn.bubble.querySelector(".body").textContent=text;if(near)chatLog.scrollTop=chatLog.scrollHeight;}}
+// Markdown mínimo y seguro: solo crea nodos con textContent; nunca innerHTML.
+function mdInline(text,parent){{const re=/(\\*\\*([^*]+)\\*\\*|`([^`]+)`|\\*([^*\\s][^*]*)\\*)/g;let last=0,m;
+while((m=re.exec(text))){{if(m.index>last)parent.append(document.createTextNode(text.slice(last,m.index)));let node;
+if(m[2]!==undefined){{node=document.createElement("strong");mdInline(m[2],node);}}
+else if(m[3]!==undefined){{node=document.createElement("code");node.textContent=m[3];}}
+else{{node=document.createElement("em");mdInline(m[4],node);}}parent.append(node);last=re.lastIndex;}}
+if(last<text.length)parent.append(document.createTextNode(text.slice(last)));}}
+function mdRender(text,target){{target.replaceChildren();const lines=String(text).replace(/\\r\\n?/g,"\\n").split("\\n");let i=0,para=[],list=null;
+const flush=()=>{{if(para.length){{const p=document.createElement("p");mdInline(para.join(" "),p);target.append(p);para=[];}}}};
+while(i<lines.length){{const line=lines[i];
+if(/^\\s*```/.test(line)){{flush();list=null;const code=[];i++;while(i<lines.length&&!/^\\s*```/.test(lines[i])){{code.push(lines[i]);i++;}}i++;
+const pre=document.createElement("pre"),c=document.createElement("code");c.textContent=code.join("\\n");pre.append(c);target.append(pre);continue;}}
+const heading=line.match(/^\\s*#{{1,6}}\\s+(.*)$/);
+if(heading){{flush();list=null;const h=document.createElement("p");h.className="md-h";mdInline(heading[1],h);target.append(h);i++;continue;}}
+const item=line.match(/^\\s*([-*+•]|\\d+[.)])\\s+(.*)$/);
+if(item){{flush();const ordered=/\\d/.test(item[1]);if(!list||list.ordered!==ordered){{const el=document.createElement(ordered?"ol":"ul");
+if(ordered){{const start=parseInt(item[1],10);if(start>1)el.start=start;}}target.append(el);list={{el,ordered}};}}
+const li=document.createElement("li");mdInline(item[2],li);list.el.append(li);i++;continue;}}
+if(!line.trim()){{flush();list=null;i++;continue;}}
+if(list&&/^\\s{{2,}}\\S/.test(line)){{const li=list.el.lastElementChild;li.append(document.createTextNode(" "));mdInline(line.trim(),li);i++;continue;}}
+list=null;para.push(line.trim());i++;}}flush();}}
+function chatSetText(text){{if(!turn||!text)return;const near=chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60;
+mdRender(text,turn.bubble.querySelector(".body"));turn.rendered=text;if(near)chatLog.scrollTop=chatLog.scrollHeight;}}
 function chatFinish(kind,detail=""){{if(!turn)return;const t=turn;turn=null;t.bubble.classList.remove("pending");
 const seconds=((Date.now()-t.startedAt)/1000).toFixed(1);
 if(kind==="error"){{t.bubble.classList.add("failed");if(!t.bubble.querySelector(".body").textContent)chatSetTextOn(t,detail);chatMeta(t.bubble,`Error · ${{seconds}} s`);chatStatus(detail,true);}}
@@ -363,7 +404,10 @@ else if(kind==="cancelled"){{chatMeta(t.bubble,`Cancelado · ${{seconds}} s`);ch
 else{{if(!t.bubble.querySelector(".body").textContent)chatSetTextOn(t,"(Mark no devolvió texto)");chatMeta(t.bubble,`${{seconds}} s`);chatStatus("");}}
 chatButtons();chatInput.focus();}}
 function chatSetTextOn(t,text){{t.bubble.querySelector(".body").textContent=text;}}
-function chatPresence(p){{if(!turn)return;const state=p.state||"offline",now=Date.now();
+function chatWide(wide){{document.body.classList.toggle("chat-wide",wide);$("chatWide").setAttribute("aria-pressed",String(wide));
+$("chatWide").textContent=wide?"Reducir":"Ampliar";try{{localStorage.setItem("mark.chatWide",wide?"1":"0");}}catch(_){{}}}}
+function chatPresence(p){{if(!turn)return;if(typeof p.revision==="number"&&p.revision<=turn.minRevision)return;
+const state=p.state||"offline",now=Date.now();
 if(p.transcript&&p.transcript!==turn.text&&!["queued","loading"].includes(state))return;
 if(state!==turn.lastState){{turn.lastState=state;turn.lastChange=now;}}
 if(p.response&&p.response!==turn.lastResponse){{turn.lastResponse=p.response;turn.lastChange=now;}}
@@ -384,23 +428,26 @@ node.textContent=on||"Núcleo apagado";node.classList.toggle("on",Boolean(on));}
 async function chatSend(){{if(turn)return;const text=chatNormalize(chatInput.value);
 if(!text){{chatStatus("Escribe un mensaje antes de enviarlo.",true);return;}}
 if(text.length>CHAT_MAX){{chatStatus(`El mensaje supera ${{CHAT_MAX}} caracteres.`,true);return;}}
-const speak=$("chatSpeak").checked;$("chatSend").disabled=true;chatStatus("Enviando…");
+const speak=$("chatSpeak").checked,minRevision=lastPresenceRevision;$("chatSend").disabled=true;chatStatus("Enviando…");
 try{{await request("/api/chat",{{method:"POST",body:JSON.stringify({{text,speak}})}});}}
 catch(error){{chatStatus(error.message,true);$("chatSend").disabled=false;return;}}
 chatInput.value="";chatAdd("user",text);const now=Date.now();
-turn={{text,bubble:chatAdd("mark","","pending"),startedAt:now,lastChange:now,lastState:"",lastResponse:"",active:false,cancelRequested:false}};
+turn={{text,bubble:chatAdd("mark","","pending"),startedAt:now,lastChange:now,lastState:"",lastResponse:"",active:false,cancelRequested:false,minRevision,rendered:""}};
 chatStatus("Mensaje en cola…");chatButtons();loadTools();}}
 async function chatCancel(){{if(!turn||turn.cancelRequested)return;turn.cancelRequested=true;chatButtons();chatStatus("Cancelando…");
 try{{await request("/api/chat/cancel",{{method:"POST",body:"{{}}"}});}}catch(error){{chatStatus(error.message,true);}}}}
-function chatOpen(open){{document.body.classList.toggle("chat-open",open);$("chatToggle").setAttribute("aria-expanded",String(open));
+function chatOpen(open){{document.body.classList.toggle("chat-open",open);if(!open)document.body.classList.remove("chat-wide");
+else{{let wide=false;try{{wide=localStorage.getItem("mark.chatWide")==="1";}}catch(_){{}}if(wide&&typeof chatWide==="function")document.body.classList.add("chat-wide");}}$("chatToggle").setAttribute("aria-expanded",String(open));
 try{{localStorage.setItem("mark.chatOpen",open?"1":"0");}}catch(_){{}}if(open)chatInput.focus();}}
 $("chatForm").addEventListener("submit",event=>{{event.preventDefault();chatSend();}});
 chatInput.addEventListener("keydown",event=>{{if(event.key==="Enter"&&!event.shiftKey&&!event.isComposing){{event.preventDefault();chatSend();}}}});
 $("chatCancel").addEventListener("click",chatCancel);
 $("chatToggle").addEventListener("click",()=>chatOpen(!document.body.classList.contains("chat-open")));
 $("chatClose").addEventListener("click",()=>chatOpen(false));
+$("chatWide").addEventListener("click",()=>chatWide(!document.body.classList.contains("chat-wide")));
 let chatInitiallyOpen=true;try{{chatInitiallyOpen=localStorage.getItem("mark.chatOpen")!=="0";}}catch(_){{}}
 chatOpen(chatInitiallyOpen);chatButtons();
+let chatInitiallyWide=false;try{{chatInitiallyWide=localStorage.getItem("mark.chatWide")==="1";}}catch(_){{}}chatWide(chatInitiallyWide);
 const canvas=$("space"),ctx=canvas.getContext("2d",{{alpha:false}}),particles=Array.from({{length:95}},()=>({{x:Math.random(),y:Math.random(),z:Math.random(),s:.3+Math.random()}}));
 function resize(){{const q=effectiveQuality(),cap=q==="eco"?1:1.35,d=Math.min(devicePixelRatio||1,cap);canvas.width=Math.max(1,innerWidth*d);canvas.height=Math.max(1,innerHeight*d);canvas.style.width=innerWidth+"px";canvas.style.height=innerHeight+"px";ctx.setTransform(d,0,0,d,0,0);}}
 addEventListener("resize",resize);document.addEventListener("visibilitychange",()=>{{applyVisualQuality();resize();}});applyVisualQuality();resize();

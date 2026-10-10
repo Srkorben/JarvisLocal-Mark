@@ -564,6 +564,18 @@ class ChatPanelHTTPTests(ChatRoutingHTTPTests):
             self.assertIn(marker, body)
         self.assertNotIn(b'style="', body)
 
+    def test_chat_renders_markdown_without_html_injection(self) -> None:
+        from jarvis_local.control_center.web import render_dashboard
+
+        page = render_dashboard(csrf_token="c", nonce="n", version="v")
+        chat = page[page.index("// --- Chat escrito"):page.index("const canvas=")]
+        # El chat construye nodos con textContent; innerHTML solo aparece en
+        # el comentario que lo prohíbe.
+        self.assertEqual(chat.count("innerHTML"), 1)
+        for marker in ("function mdRender", 'createElement("strong")', 'createElement("pre")',
+                       "p.revision<=turn.minRevision", 'id="chatWide"'):
+            self.assertIn(marker, page if marker.startswith("id=") else chat)
+
     def test_cancel_requires_csrf_and_reaches_the_runtime_queue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
         connection.request(
