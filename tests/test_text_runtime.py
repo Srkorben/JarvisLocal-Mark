@@ -233,3 +233,36 @@ class PanelChatCLITests(IsolatedAsyncioTestCase):
                 )
             self.assertEqual(code, 1)
             self.assertEqual(started, [True])
+
+
+class PanelCancelTests(IsolatedAsyncioTestCase):
+    async def test_panel_cancel_stops_the_active_text_turn(self) -> None:
+        with TemporaryDirectory() as directory:
+            manager = TextRuntimeTests.build(self, Path(directory))
+            self.orchestrator.wait_for_cancel = True
+            requests = [{"text": "tarea larga", "speak": False}]
+            cancel_now = asyncio.Event()
+
+            async def source():
+                if requests:
+                    return requests.pop(0)
+                await cancel_now.wait()
+                cancel_now.clear()
+                return {"cancel": True}
+
+            loop = asyncio.create_task(
+                run_text_request_loop(manager, text_request_source=source, poll_seconds=0.01)
+            )
+            for _ in range(200):
+                if manager.state is VoiceState.PROCESSING:
+                    break
+                await asyncio.sleep(0.01)
+            self.assertIs(manager.state, VoiceState.PROCESSING)
+            cancel_now.set()
+            for _ in range(200):
+                if manager.last_result is not None:
+                    break
+                await asyncio.sleep(0.01)
+            loop.cancel()
+            await asyncio.gather(loop, return_exceptions=True)
+            self.assertEqual(manager.last_result.outcome, "cancelled")

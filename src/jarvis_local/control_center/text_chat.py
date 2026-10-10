@@ -32,6 +32,7 @@ class TextChatRequestStore:
         self._condition = threading.Condition()
         self._pending: deque[dict[str, Any]] = deque(maxlen=1)
         self._closed = False
+        self._cancel_requested = False
 
     def submit(self, text: object, speak: object) -> dict[str, Any]:
         if not isinstance(text, str):
@@ -65,16 +66,37 @@ class TextChatRequestStore:
         return dict(request)
 
     def take(self, *, wait_seconds: float = 0.0) -> dict[str, Any] | None:
+        """Entrega la siguiente solicitud o, con prioridad, una orden de cancelar.
+
+        La orden de cancelación es ``{"cancel": True}``: no lleva texto y el
+        runtime la aplica al turno en curso.
+        """
+
         deadline = time.monotonic() + max(0.0, min(wait_seconds, 10.0))
         with self._condition:
-            while not self._pending and not self._closed:
+            while not self._pending and not self._cancel_requested and not self._closed:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
                 self._condition.wait(remaining)
+            if self._cancel_requested:
+                self._cancel_requested = False
+                return {"cancel": True}
             if not self._pending:
                 return None
             return dict(self._pending.popleft())
+
+    def cancel(self) -> dict[str, Any]:
+        """Descarta lo pendiente y pide al runtime cancelar el turno activo."""
+
+        with self._condition:
+            if self._closed:
+                raise TextChatError("chat_closed", "El canal de texto está detenido.")
+            discarded = len(self._pending)
+            self._pending.clear()
+            self._cancel_requested = True
+            self._condition.notify_all()
+        return {"outcome": "cancel_requested", "discarded": discarded}
 
     def discard(self, request_id: str) -> None:
         with self._condition:

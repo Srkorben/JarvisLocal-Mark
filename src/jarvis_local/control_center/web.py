@@ -131,6 +131,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     #moduleSummary {{ color:#d8f5fa; font-size:clamp(16px,2vw,22px); line-height:1.45; margin:26px 0 8px; }}
     #moduleDescription {{ color:#7897a0; line-height:1.65; max-width:820px; }}
     .module-columns {{ display:grid; grid-template-columns:1.1fr .9fr; gap:34px; margin-top:30px; }}
+    .module-section.spaced {{ margin-top:25px; }}
     .module-section h3 {{ color:#4f7e8b; text-transform:uppercase; font-size:10px; letter-spacing:.18em;
       margin:0 0 13px; }}
     .facts {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }}
@@ -148,6 +149,36 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .quality-note {{ color:#536e76; font-size:11px; line-height:1.5; margin-top:10px; }}
     body[data-quality="eco"] .grain,body[data-quality="paused"] .grain {{ display:none; }}
     body[data-quality="eco"] .ticks {{ opacity:.22; }}
+    #chat {{ position:fixed; z-index:5; left:clamp(12px,2vw,32px); top:clamp(70px,9vh,92px);
+      bottom:clamp(86px,12vh,118px); width:min(430px,calc(100vw - 24px)); display:none; flex-direction:column;
+      border:1px solid #1d4b59; background:#040b0fe6; backdrop-filter:blur(16px);
+      box-shadow:0 24px 70px #000b,0 0 40px #1fcbe60f; }}
+    body.chat-open #chat {{ display:flex; }}
+    body.chat-open .conversation {{ display:none; }}
+    .chat-head {{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #15343e; }}
+    .chat-head h2 {{ margin:0; flex:1; text-transform:uppercase; letter-spacing:.18em; font-size:12px; font-weight:600; }}
+    #chatRuntime {{ color:#5f8793; text-transform:uppercase; letter-spacing:.1em; font-size:9px; }}
+    #chatRuntime.on {{ color:var(--cyan); }}
+    .chat-log {{ flex:1; min-height:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }}
+    .chat-empty {{ color:#557580; font-size:12px; line-height:1.6; margin:auto 0; text-align:center; }}
+    .msg {{ max-width:92%; padding:10px 12px; border:1px solid #163a45; background:#071419; font-size:14px;
+      line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }}
+    .msg .who {{ display:block; margin:0 0 4px; }}
+    .msg.user {{ align-self:flex-end; border-color:#23667a; background:#0a2029; color:#dff8ff; }}
+    .msg.mark {{ align-self:flex-start; color:#effdff; }}
+    .msg.pending .body::after {{ content:'▍'; color:var(--cyan); animation:blink 1s steps(1) infinite; }}
+    .msg.failed {{ border-color:#6b3434; background:#1c0c0c; color:#f3c0c0; }}
+    .msg .meta {{ display:block; margin-top:6px; color:#5d7f89; font-size:10px; letter-spacing:.06em; }}
+    .chat-status {{ min-height:20px; padding:0 14px; color:#7fb6c3; font-size:11px; letter-spacing:.04em; }}
+    .chat-status.bad {{ color:#ff9b9b; }}
+    #chatForm {{ border-top:1px solid #15343e; padding:12px 14px; display:grid; gap:9px; }}
+    #chatInput {{ width:100%; resize:none; min-height:58px; max-height:160px; padding:10px; font:inherit; font-size:14px;
+      color:var(--white); background:#061117; border:1px solid #1d4b59; border-radius:3px; }}
+    #chatInput:focus {{ outline:none; border-color:var(--cyan); box-shadow:0 0 0 1px #69e6ff44; }}
+    .chat-row {{ display:flex; align-items:center; gap:8px; }}
+    .chat-row label {{ flex:1; color:#86a9b3; font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer; }}
+    .chat-row .primary,.chat-row .stop {{ padding:9px 13px; }}
+    @keyframes blink {{ 50% {{ opacity:0; }} }}
     @keyframes spin {{ to {{ transform:rotate(360deg); }} }}
     @keyframes spin-rev {{ to {{ transform:rotate(-360deg); }} }}
     @keyframes breathe {{ to {{ transform:scale(1.1); }} }}
@@ -165,7 +196,8 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
   <header>
     <div class="brand"><div class="sigil">M</div><span>Mark Scout</span></div>
     <div class="privacy"><span class="dot"></span><span>núcleo local · 127.0.0.1</span></div>
-    <button id="menu" class="menu" type="button">Sistemas</button>
+    <div class="controls"><button id="chatToggle" class="menu" type="button" aria-controls="chat" aria-expanded="false">Chat</button>
+      <button id="menu" class="menu" type="button">Sistemas</button></div>
   </header>
   <main class="stage">
     <aside class="telemetry" aria-label="Módulos principales">
@@ -196,6 +228,19 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     <div class="version">{safe_version}<br>Privado por diseño</div>
   </footer>
 </div>
+<section id="chat" aria-label="Conversación escrita con Mark">
+  <div class="chat-head"><h2>Conversación</h2><span id="chatRuntime">Núcleo apagado</span>
+    <button id="chatClose" class="close" type="button" aria-label="Cerrar chat">×</button></div>
+  <div id="chatLog" class="chat-log" aria-live="polite"><p class="chat-empty">Escribe una instrucción para Mark.
+    El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación de esta ventana no se guarda en el navegador.</p></div>
+  <div id="chatStatus" class="chat-status" role="status"></div>
+  <form id="chatForm" autocomplete="off">
+    <textarea id="chatInput" maxlength="4000" rows="2" placeholder="Escribe a Mark… (Enter envía, Mayús+Enter salto de línea)" aria-label="Mensaje para Mark"></textarea>
+    <div class="chat-row"><label><input id="chatSpeak" type="checkbox"> Responder también con voz</label>
+      <button id="chatCancel" class="stop" type="button" disabled>Cancelar</button>
+      <button id="chatSend" class="primary" type="submit">Enviar</button></div>
+  </form>
+</section>
 <aside id="drawer" aria-label="Sistemas y herramientas"><div class="drawer-head"><h2>Sistemas</h2>
   <button id="closeDrawer" class="close" type="button" aria-label="Cerrar">×</button></div><div id="tools"></div></aside>
 <section id="modulePanel" aria-label="Detalle del módulo" aria-hidden="true" inert>
@@ -209,7 +254,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       <section class="module-section"><h3>Estado y configuración actual</h3><div id="moduleFacts" class="facts"></div>
         <div id="moduleControls"></div></section>
       <section><div class="module-section"><h3>Capacidades disponibles</h3><ul id="moduleCapabilities" class="module-list"></ul></div>
-        <div class="module-section" style="margin-top:26px"><h3>Límites actuales</h3><ul id="moduleLimits" class="module-list limits"></ul></div></section>
+        <div class="module-section spaced"><h3>Límites actuales</h3><ul id="moduleLimits" class="module-list limits"></ul></div></section>
     </div>
   </article>
 </section>
@@ -218,7 +263,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 <div id="notice" role="status"></div>
 <script nonce="{safe_nonce}">
 const csrf="{csrf}";
-const stateText={{offline:["Sistema desconectado","Inicia el núcleo de voz para comenzar"],loading:["Inicializando","Cargando modelos locales de voz"],idle:["En espera","Mantén Ctrl + Alt + M para hablar"],
+const stateText={{offline:["Sistema desconectado","Inicia el núcleo de voz para comenzar"],loading:["Inicializando","Cargando modelos locales de voz"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
 recording:["Escuchando","Suelta la combinación para enviar"],transcribing:["Interpretando voz","Transcripción local en curso"],
 processing:["Procesando","Consultando el núcleo local"],speaking:["Respondiendo","Síntesis de voz activa"],
 cancelling:["Cancelando","Interrumpiendo el turno actual"],error:["Incidencia detectada","Consulta el detalle en pantalla"]}};
@@ -239,11 +284,13 @@ function applyVisualQuality(){{document.body.dataset.quality=effectiveQuality();
 function setPresence(p){{const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
 const copy=stateText[currentState]||stateText.offline;$("stateTitle").textContent=copy[0];$("stateHint").textContent=p.error||copy[1];
 $("transcript").textContent=p.transcript||"";$("response").textContent=p.response||"";
-$("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));}}
-async function loadPresence(){{try{{const data=await request("/api/voice/presence");setPresence(data.presence);}}catch(_){{setPresence({{state:"offline"}});}}}}
+$("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));chatPresence(p);}}
+let presenceFailures=0;
+async function loadPresence(){{try{{const data=await request("/api/voice/presence");presenceFailures=0;setPresence(data.presence);}}
+catch(_){{presenceFailures++;if(presenceFailures>=8)chatDisconnected();else return;setPresence({{state:"offline"}});}}}}
 async function loadTools(){{try{{const data=await request("/api/tools");toolsCache=data.tools;renderTools();
 const voice=toolsCache.find(t=>t.id==="voice"),running=voice?.status==="running";
-$("voiceStart").disabled=!voice||running||voice.status==="unavailable";$("voiceStop").disabled=!running;}}
+$("voiceStart").disabled=!voice||running||voice.status==="unavailable";$("voiceStop").disabled=!running;chatRuntimeLabel();}}
 catch(error){{tell(error.message);}}}}
 async function loadModules(){{try{{const data=await request("/api/modules");modulesCache=data.modules||[];
 document.title=data.identity?.display_name||"Mark Scout";}}catch(error){{tell(error.message);}}}}
@@ -263,7 +310,7 @@ $("moduleTitle").textContent=m.label;$("moduleStatus").textContent=m.status_labe
 $("moduleDescription").textContent=m.description;$("moduleFacts").innerHTML=(m.facts||[]).map(f=>`<div class="fact"><span>${{esc(f[0])}}</span><strong>${{esc(f[1])}}</strong></div>`).join("");
 $("moduleCapabilities").innerHTML=(m.capabilities||[]).map(v=>`<li>${{esc(v)}}</li>`).join("");
 $("moduleLimits").innerHTML=(m.limitations||[]).map(v=>`<li>${{esc(v)}}</li>`).join("");
-$("moduleControls").innerHTML=(m.controls||[]).includes("visual_quality")?`<div class="module-section" style="margin-top:24px"><h3>Calidad visual operativa</h3>
+$("moduleControls").innerHTML=(m.controls||[]).includes("visual_quality")?`<div class="module-section spaced"><h3>Calidad visual operativa</h3>
 <div class="quality"><button data-quality="auto">Auto</button><button data-quality="balanced">Equilibrado</button><button data-quality="eco">Eco</button></div>
 <p class="quality-note">Auto reduce resolución, partículas y FPS durante inferencia; Eco minimiza uso gráfico. Esta preferencia solo afecta la interfaz.</p></div>`:"";
 modulePanel.classList.add("open");modulePanel.removeAttribute("inert");modulePanel.setAttribute("aria-hidden","false");refreshQualityButtons();}}
@@ -296,6 +343,64 @@ if(start&&start.dataset.confirm==="true"){{confirmed=window.confirm("Esta acció
 await toolAction(id,start?"start":"stop",confirmed);tell("Acción procesada.");}}catch(e){{tell(e.message);}}finally{{button.disabled=false;}}}});
 $("voiceFileInput").addEventListener("change",async event=>{{const file=event.target.files?.[0];event.target.value="";if(!file)return;
 try{{await importVoiceFile(file);}}catch(error){{tell(error.message);}}}});
+// --- Chat escrito: /api/chat encola; la presencia trae la respuesta progresiva ---
+const CHAT_MAX=4000,CHAT_STALL_MS=150000,chatLog=$("chatLog"),chatInput=$("chatInput");
+let turn=null;
+function chatNormalize(text){{return text.trim().split(/\\s+/).join(" ");}}
+function chatStatus(text,bad=false){{const node=$("chatStatus");node.textContent=text;node.classList.toggle("bad",bad);}}
+function chatAdd(role,text,extra=""){{chatLog.querySelector(".chat-empty")?.remove();const msg=document.createElement("div");
+msg.className=`msg ${{role}} ${{extra}}`.trim();const who=document.createElement("span");who.className="who";who.textContent=role==="user"?"Tú":"Mark";
+const body=document.createElement("span");body.className="body";body.textContent=text;msg.append(who,body);chatLog.append(msg);
+chatLog.scrollTop=chatLog.scrollHeight;return msg;}}
+function chatMeta(msg,text){{const meta=document.createElement("span");meta.className="meta";meta.textContent=text;msg.append(meta);}}
+function chatButtons(){{$("chatSend").disabled=Boolean(turn);$("chatCancel").disabled=!turn||turn.cancelRequested;}}
+function chatSetText(text){{if(!turn)return;const near=chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60;
+turn.bubble.querySelector(".body").textContent=text;if(near)chatLog.scrollTop=chatLog.scrollHeight;}}
+function chatFinish(kind,detail=""){{if(!turn)return;const t=turn;turn=null;t.bubble.classList.remove("pending");
+const seconds=((Date.now()-t.startedAt)/1000).toFixed(1);
+if(kind==="error"){{t.bubble.classList.add("failed");if(!t.bubble.querySelector(".body").textContent)chatSetTextOn(t,detail);chatMeta(t.bubble,`Error · ${{seconds}} s`);chatStatus(detail,true);}}
+else if(kind==="cancelled"){{chatMeta(t.bubble,`Cancelado · ${{seconds}} s`);chatStatus("Turno cancelado.");}}
+else{{if(!t.bubble.querySelector(".body").textContent)chatSetTextOn(t,"(Mark no devolvió texto)");chatMeta(t.bubble,`${{seconds}} s`);chatStatus("");}}
+chatButtons();chatInput.focus();}}
+function chatSetTextOn(t,text){{t.bubble.querySelector(".body").textContent=text;}}
+function chatPresence(p){{if(!turn)return;const state=p.state||"offline",now=Date.now();
+if(p.transcript&&p.transcript!==turn.text&&!["queued","loading"].includes(state))return;
+if(state!==turn.lastState){{turn.lastState=state;turn.lastChange=now;}}
+if(p.response&&p.response!==turn.lastResponse){{turn.lastResponse=p.response;turn.lastChange=now;}}
+if(["processing","speaking","transcribing"].includes(state)){{turn.active=true;if(p.response)chatSetText(p.response);
+chatStatus(state==="speaking"?"Mark está hablando…":p.response?"Mark está escribiendo…":"Mark está pensando…");}}
+else if(state==="queued")chatStatus("Mensaje en cola…");
+else if(state==="loading")chatStatus("Iniciando el núcleo local (la primera vez tarda unos segundos)…");
+else if(state==="cancelling")chatStatus("Cancelando…");
+else if(state==="error")chatFinish("error",p.error||"El núcleo informó un error.");
+else if(state==="idle"&&(turn.active||p.response)){{if(p.response)chatSetText(p.response);chatFinish(turn.cancelRequested?"cancelled":"done");return;}}
+else if(state==="offline"&&now-turn.startedAt>4000)chatFinish("error","El núcleo se detuvo antes de responder.");
+if(turn&&now-turn.lastChange>CHAT_STALL_MS)chatFinish("error","Sin respuesta del núcleo local. Puedes reintentar.");}}
+function chatDisconnected(){{chatStatus("Sin conexión con el panel local. Reintentando…",true);
+if(turn&&Date.now()-turn.lastChange>15000)chatFinish("error","Se perdió la conexión con el panel local.");}}
+function chatRuntimeLabel(){{const byId=id=>toolsCache.find(t=>t.id===id);const voice=byId("voice"),chat=byId("chat_runtime"),node=$("chatRuntime");
+const on=voice?.status==="running"?"Núcleo de voz activo":chat?.status==="running"?"Núcleo de texto activo":"";
+node.textContent=on||"Núcleo apagado";node.classList.toggle("on",Boolean(on));}}
+async function chatSend(){{if(turn)return;const text=chatNormalize(chatInput.value);
+if(!text){{chatStatus("Escribe un mensaje antes de enviarlo.",true);return;}}
+if(text.length>CHAT_MAX){{chatStatus(`El mensaje supera ${{CHAT_MAX}} caracteres.`,true);return;}}
+const speak=$("chatSpeak").checked;$("chatSend").disabled=true;chatStatus("Enviando…");
+try{{await request("/api/chat",{{method:"POST",body:JSON.stringify({{text,speak}})}});}}
+catch(error){{chatStatus(error.message,true);$("chatSend").disabled=false;return;}}
+chatInput.value="";chatAdd("user",text);const now=Date.now();
+turn={{text,bubble:chatAdd("mark","","pending"),startedAt:now,lastChange:now,lastState:"",lastResponse:"",active:false,cancelRequested:false}};
+chatStatus("Mensaje en cola…");chatButtons();loadTools();}}
+async function chatCancel(){{if(!turn||turn.cancelRequested)return;turn.cancelRequested=true;chatButtons();chatStatus("Cancelando…");
+try{{await request("/api/chat/cancel",{{method:"POST",body:"{{}}"}});}}catch(error){{chatStatus(error.message,true);}}}}
+function chatOpen(open){{document.body.classList.toggle("chat-open",open);$("chatToggle").setAttribute("aria-expanded",String(open));
+try{{localStorage.setItem("mark.chatOpen",open?"1":"0");}}catch(_){{}}if(open)chatInput.focus();}}
+$("chatForm").addEventListener("submit",event=>{{event.preventDefault();chatSend();}});
+chatInput.addEventListener("keydown",event=>{{if(event.key==="Enter"&&!event.shiftKey&&!event.isComposing){{event.preventDefault();chatSend();}}}});
+$("chatCancel").addEventListener("click",chatCancel);
+$("chatToggle").addEventListener("click",()=>chatOpen(!document.body.classList.contains("chat-open")));
+$("chatClose").addEventListener("click",()=>chatOpen(false));
+let chatInitiallyOpen=true;try{{chatInitiallyOpen=localStorage.getItem("mark.chatOpen")!=="0";}}catch(_){{}}
+chatOpen(chatInitiallyOpen);chatButtons();
 const canvas=$("space"),ctx=canvas.getContext("2d",{{alpha:false}}),particles=Array.from({{length:95}},()=>({{x:Math.random(),y:Math.random(),z:Math.random(),s:.3+Math.random()}}));
 function resize(){{const q=effectiveQuality(),cap=q==="eco"?1:1.35,d=Math.min(devicePixelRatio||1,cap);canvas.width=Math.max(1,innerWidth*d);canvas.height=Math.max(1,innerHeight*d);canvas.style.width=innerWidth+"px";canvas.style.height=innerHeight+"px";ctx.setTransform(d,0,0,d,0,0);}}
 addEventListener("resize",resize);document.addEventListener("visibilitychange",()=>{{applyVisualQuality();resize();}});applyVisualQuality();resize();

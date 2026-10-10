@@ -537,6 +537,49 @@ class ChatRoutingHTTPTests(TestCase):
         self.assertEqual(self.running(), {"voice"})
 
 
+class TextChatStoreTests(TestCase):
+    def test_cancel_discards_pending_and_wakes_the_runtime(self) -> None:
+        from jarvis_local.control_center.text_chat import TextChatRequestStore
+
+        store = TextChatRequestStore()
+        store.submit("hola", False)
+        received: list[object] = []
+        self.assertEqual(store.cancel()["discarded"], 1)
+        waiter = threading.Thread(target=lambda: received.append(store.take(wait_seconds=5)))
+        waiter.start()
+        waiter.join(timeout=2)
+        self.assertEqual(received, [{"cancel": True}])
+        self.assertIsNone(store.take(wait_seconds=0))
+
+
+class ChatPanelHTTPTests(ChatRoutingHTTPTests):
+    def test_dashboard_includes_the_chat_panel(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/", headers={"Cookie": "jarvis_cc=secret-token"})
+        response = connection.getresponse()
+        body = response.read()
+        connection.close()
+        self.assertEqual(response.status, 200)
+        for marker in (b'id="chatInput"', b'id="chatCancel"', b"/api/chat/cancel", b"chatPresence"):
+            self.assertIn(marker, body)
+        self.assertNotIn(b'style="', body)
+
+    def test_cancel_requires_csrf_and_reaches_the_runtime_queue(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request(
+            "POST", "/api/chat/cancel", body=b"{}",
+            headers={"Cookie": "jarvis_cc=secret-token", "Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 403)
+        status, body = self.post("/api/chat/cancel", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["result"]["outcome"], "cancel_requested")
+        self.assertEqual(self.server.text_chat.take(wait_seconds=0), {"cancel": True})
+
+
 class StatusCLITests(TestCase):
     def test_status_never_prints_authentication_token(self) -> None:
         root = Path(__file__).resolve().parents[1]

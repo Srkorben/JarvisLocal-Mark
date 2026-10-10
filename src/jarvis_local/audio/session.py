@@ -526,6 +526,9 @@ class VoiceSessionManager:
         )
 
 
+_PANEL_CANCEL_REASON = "Cancelado desde el panel."
+
+
 async def run_push_to_talk_loop(
     manager: VoiceSessionManager,
     *,
@@ -565,6 +568,9 @@ async def run_push_to_talk_loop(
                 except Exception:
                     pending_text = pending_text
                 text_request_task = None
+            if pending_text is not None and pending_text.get("cancel"):
+                pending_text = None
+                await manager.cancel_active(_PANEL_CANCEL_REASON)
             if pending_text is not None and manager.state is VoiceState.IDLE:
                 accepted = await manager.submit_text(
                     str(pending_text["text"]),
@@ -614,6 +620,9 @@ async def run_text_request_loop(
                 except Exception:
                     pass
                 request_task = None
+            if pending is not None and pending.get("cancel"):
+                pending = None
+                await manager.cancel_active(_PANEL_CANCEL_REASON)
             if pending is not None and manager.state is VoiceState.IDLE:
                 accepted = await manager.submit_text(
                     str(pending["text"]),

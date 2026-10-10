@@ -235,6 +235,18 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if parsed.path == "/api/chat/cancel":
+            try:
+                self._read_json(allowed_fields=frozenset())
+                result = self.server.text_chat.cancel()
+            except TextChatError as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": exc.as_dict()})
+                return
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                return
+            self._json(HTTPStatus.OK, {"result": result})
+            return
         if parsed.path == "/api/voice/reference/import":
             if self.server.voice_importer is None:
                 self._json_error(

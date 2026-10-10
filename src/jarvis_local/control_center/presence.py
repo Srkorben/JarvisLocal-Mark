@@ -174,6 +174,8 @@ class VoicePresenceClient:
             request = payload.get("request") if response.status == 200 else None
             if not isinstance(request, dict):
                 return None
+            if request.get("cancel") is True:
+                return {"cancel": True}
             request_id = request.get("id")
             text = request.get("text")
             speak = request.get("speak")
