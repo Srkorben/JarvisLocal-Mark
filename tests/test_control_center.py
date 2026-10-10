@@ -9,6 +9,7 @@ from pathlib import Path
 from shutil import copyfile
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from jarvis_local.control_center.catalog import ToolSpec, build_tool_catalog
 from jarvis_local.control_center import launcher as launcher_module
@@ -20,6 +21,8 @@ from jarvis_local.control_center.runtime import (
     ToolConflictError,
 )
 from jarvis_local.control_center.server import ControlCenterHTTPServer
+from jarvis_local.control_center.system_status import SystemStatusMonitor
+from tests.helpers import make_settings
 
 
 class FakeProcess:
@@ -74,7 +77,13 @@ class CatalogTests(TestCase):
         # cambiar de resultado cuando el usuario enrola o elimina su voz real.
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            catalog = build_tool_catalog(root)
+            platform_executable = root / "platform-tool.exe"
+            platform_executable.touch()
+            with patch(
+                "jarvis_local.control_center.catalog._windows_executable",
+                return_value=platform_executable,
+            ):
+                catalog = build_tool_catalog(root)
             self.assertEqual(len(catalog), 11)
             self.assertEqual(
                 {item.source for item in catalog.values()},
@@ -240,12 +249,27 @@ class HTTPTests(TestCase):
         )
         icon = root / "icon.ico"
         icon.write_bytes(b"\x00\x00\x01\x00")
+        self.system_monitor = SystemStatusMonitor(
+            make_settings(root, model="fixture-model"),
+            manager,
+            hardware_reader=lambda: {
+                "cpu": {"available": True, "percent": 25.0},
+                "ram": {
+                    "available": True,
+                    "used_mib": 1024,
+                    "total_mib": 4096,
+                    "percent": 25.0,
+                },
+                "gpu": {"available": False, "reason": "nvidia_smi_missing"},
+            },
+        )
         self.server = ControlCenterHTTPServer(
             ("127.0.0.1", 0),
             manager,
             auth_token="secret-token",
             csrf_token="csrf-token",
             icon_path=icon,
+            system_monitor=self.system_monitor,
             module_snapshot=lambda: {
                 "identity": {"display_name": "Mark Scout", "short_name": "Mark"},
                 "modules": [{"id": "model", "label": "Modelo"}],
@@ -311,6 +335,18 @@ class HTTPTests(TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["identity"]["short_name"], "Mark")
+
+        status, _, _ = self.request("GET", "/api/system")
+        self.assertEqual(status, 401)
+        status, headers, body = self.request(
+            "GET", "/api/system", headers=self.authenticated_headers()
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        system = json.loads(body)["system"]
+        self.assertEqual(system["model"]["name"], "fixture-model")
+        self.assertEqual(system["cpu"]["percent"], 25.0)
+        self.assertNotIn("project_dir", json.dumps(system))
 
         status, _, _ = self.request(
             "POST", "/api/tools/sample/start", headers=self.authenticated_headers(), body=b"{}"
@@ -479,6 +515,11 @@ class ChatRoutingHTTPTests(TestCase):
             auth_token="secret-token",
             csrf_token="csrf-token",
             icon_path=icon,
+            system_monitor=SystemStatusMonitor(
+                make_settings(root),
+                self.manager,
+                hardware_reader=lambda: {},
+            ),
             version="test",
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -560,7 +601,10 @@ class ChatPanelHTTPTests(ChatRoutingHTTPTests):
         body = response.read()
         connection.close()
         self.assertEqual(response.status, 200)
-        for marker in (b'id="chatInput"', b'id="chatCancel"', b"/api/chat/cancel", b"chatPresence"):
+        for marker in (
+            b'id="chatInput"', b'id="chatCancel"', b"/api/chat/cancel",
+            b"chatPresence", b'id="corePanel"', b"/api/system",
+        ):
             self.assertIn(marker, body)
         self.assertNotIn(b'style="', body)
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import os
 import secrets
+import socket
 import threading
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -14,6 +16,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from .runtime import ControlCenterError, ProcessManager
 from .presence import PRESENCE_FIELDS, VoicePresenceStore
+from .system_status import SystemStatusMonitor
 from .text_chat import TextChatError, TextChatRequestStore
 from .voice_import import VoiceImportError
 from .web import render_dashboard
@@ -28,6 +31,15 @@ _CONVERSATION_RUNTIMES = frozenset({"voice", "chat_runtime"})
 
 class ControlCenterHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
+    # En Windows ``HTTPServer`` permite reutilizar una dirección. Dos árboles
+    # de trabajo podrían quedar escuchando el mismo puerto y recibir peticiones
+    # de forma no determinista. El panel necesita propiedad exclusiva del bind.
+    allow_reuse_address = False
+
+    def server_bind(self) -> None:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def __init__(
         self,
@@ -39,6 +51,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         icon_path: Path,
         presence: VoicePresenceStore | None = None,
         text_chat: TextChatRequestStore | None = None,
+        system_monitor: SystemStatusMonitor | None = None,
         module_snapshot: Callable[[], dict[str, Any]] | None = None,
         voice_importer: Callable[..., dict[str, object]] | None = None,
         version: str = "local",
@@ -49,6 +62,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         self.icon_path = icon_path
         self.presence = presence or VoicePresenceStore()
         self.text_chat = text_chat or TextChatRequestStore()
+        self.system_monitor = system_monitor
         self.module_snapshot = module_snapshot
         self.voice_importer = voice_importer
         self.version = version
@@ -124,6 +138,28 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/tools":
             self._json(HTTPStatus.OK, {"tools": self.server.manager.list_status()})
+            return
+        if parsed.path == "/api/system":
+            if self.server.system_monitor is None:
+                self._json_error(
+                    HTTPStatus.SERVICE_UNAVAILABLE,
+                    "system_status_unavailable",
+                    "El monitor local no está configurado.",
+                )
+                return
+            try:
+                snapshot = self.server.system_monitor.snapshot(
+                    self.server.presence.snapshot()
+                )
+            except Exception:
+                LOGGER.exception("No se pudo construir el estado seguro del núcleo.")
+                self._json_error(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "system_status_failed",
+                    "No se pudo leer el estado local del núcleo.",
+                )
+                return
+            self._json(HTTPStatus.OK, {"system": snapshot})
             return
         if parsed.path == "/api/voice/presence":
             self._json(HTTPStatus.OK, {"presence": self.server.presence.snapshot()})

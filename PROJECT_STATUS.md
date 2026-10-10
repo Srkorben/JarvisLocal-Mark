@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-09
+Última actualización: 2026-10-10
 
 ## Resumen
 
@@ -57,6 +57,15 @@ separados hasta completar sus pruebas.
 - Unity Hub 3.22.2 y Unity 6.3 LTS 6000.3.26f1 instalados; el adaptador
   permanece bloqueado por falta de licencia activa (código 198);
 - Epic Games Launcher actualizado; Unreal 5.8 requiere autenticación del usuario.
+
+Incremento Ref 2.0: **monitor y panel Núcleo implementados en la rama de UI**.
+El endpoint autenticado `/api/system` compone los estados de texto y voz con la
+presencia efímera y mide CPU, RAM, GPU y VRAM sin cargar modelos adicionales.
+Las lecturas de hardware tienen caché y fallos explícitos; el panel conserva los
+controles del catálogo cerrado y la exclusión entre runtimes. Se validó en
+Chromium sobre Windows, incluyendo transiciones, Escape y no duplicación. La
+validación final dentro de WPF/WebView2 permanece pendiente y esta rama todavía
+no está instalada en la carpeta principal.
 
 ## Fase 2 implementada
 

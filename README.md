@@ -46,6 +46,8 @@ Funciona ahora:
   ondas por estado de voz y centro de control loopback de catálogo cerrado;
 - presencia visual efímera para carga, escucha, transcripción, procesamiento,
   respuesta, cancelación y error, sin duplicar historial ni guardar audio.
+- panel **Núcleo** dentro del chat, con estado real de texto/voz, modelo,
+  CPU, RAM, GPU y VRAM, y controles que reutilizan el catálogo cerrado;
 - seis módulos interactivos con configuración real y límites explícitos;
 - gobernador visual Auto/Equilibrado/Eco que reduce FPS, resolución y partículas
   durante inferencia y pausa el render al ocultarse.

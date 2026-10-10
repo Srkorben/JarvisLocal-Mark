@@ -185,6 +185,28 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     #chatWide {{ border:1px solid #1b4452; background:transparent; color:#8cb0bb; cursor:pointer;
       font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:2px; }}
     #chatWide:hover,#chatWide:focus-visible {{ color:white; border-color:var(--cyan); outline:none; }}
+    #coreToggle {{ border:1px solid #1b4452; background:#07151a; color:#8cb0bb; cursor:pointer;
+      font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:2px; }}
+    #coreToggle:hover,#coreToggle:focus-visible,#coreToggle[aria-expanded="true"] {{ color:white; border-color:var(--cyan); outline:none; }}
+    #corePanel {{ padding:12px 14px; border-bottom:1px solid #15343e; background:#03090c; display:grid; gap:11px; }}
+    #corePanel[hidden] {{ display:none; }}
+    .core-panel-head {{ display:flex; align-items:center; justify-content:space-between; gap:12px; }}
+    .core-panel-head strong {{ font-size:12px; font-weight:550; letter-spacing:.08em; text-transform:uppercase; }}
+    .core-state {{ color:#79929c; font-size:9px; letter-spacing:.12em; text-transform:uppercase; }}
+    .core-state.available,.core-state.processing {{ color:var(--cyan); }}
+    .core-state.initializing,.core-state.cancelling {{ color:#e8c66d; }}
+    .core-state.error {{ color:#ff8f8f; }}
+    .core-model {{ color:#86a9b3; font-size:11px; overflow-wrap:anywhere; }}
+    .core-runtime-grid,.core-metrics {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }}
+    .core-chip,.metric {{ border:1px solid #12333e; background:#061116; padding:8px 9px; min-width:0; }}
+    .core-chip span,.metric span {{ display:block; color:#4f747f; font-size:8px; letter-spacing:.12em; text-transform:uppercase; }}
+    .core-chip strong,.metric strong {{ display:block; margin-top:4px; color:#c6eef7; font-size:11px; font-weight:500; overflow-wrap:anywhere; }}
+    .metric progress {{ width:100%; height:4px; margin-top:7px; border:0; background:#0b242d; accent-color:#55d9f2; }}
+    .metric progress::-webkit-progress-bar {{ background:#0b242d; }}
+    .metric progress::-webkit-progress-value {{ background:#55d9f2; box-shadow:0 0 8px #55d9f266; }}
+    .core-actions {{ display:flex; flex-wrap:wrap; gap:7px; }}
+    .core-actions button {{ flex:1; min-width:100px; padding:8px 9px; }}
+    #systemStatus {{ min-height:15px; color:#587781; font-size:10px; }}
     .msg.mark .body {{ display:block; white-space:normal; }}
     .msg.mark .body p {{ margin:0 0 .6em; }}
     .msg.mark .body > :last-child {{ margin-bottom:0; }}
@@ -248,8 +270,29 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 </div>
 <section id="chat" aria-label="Conversación escrita con Mark">
   <div class="chat-head"><h2>Conversación</h2><span id="chatRuntime">Núcleo apagado</span>
+    <button id="coreToggle" type="button" aria-controls="corePanel" aria-expanded="false">Núcleo</button>
     <button id="chatWide" type="button" aria-pressed="false" title="Ampliar o reducir el área de conversación">Ampliar</button>
     <button id="chatClose" class="close" type="button" aria-label="Cerrar chat">×</button></div>
+  <section id="corePanel" aria-label="Estado y controles del núcleo" hidden>
+    <div class="core-panel-head"><strong>Estado del núcleo</strong><span id="coreState" class="core-state off">Apagado</span></div>
+    <div id="coreModel" class="core-model">Modelo local: consultando…</div>
+    <div class="core-runtime-grid">
+      <div class="core-chip"><span>Texto</span><strong id="runtimeText">Detenido</strong></div>
+      <div class="core-chip"><span>Voz</span><strong id="runtimeVoice">Detenido</strong></div>
+    </div>
+    <div class="core-metrics">
+      <div class="metric"><span>CPU</span><strong id="metricCpu">—</strong><progress id="barCpu" max="100" value="0"></progress></div>
+      <div class="metric"><span>RAM</span><strong id="metricRam">—</strong><progress id="barRam" max="100" value="0"></progress></div>
+      <div class="metric"><span>GPU</span><strong id="metricGpu">—</strong><progress id="barGpu" max="100" value="0"></progress></div>
+      <div class="metric"><span>VRAM</span><strong id="metricVram">—</strong><progress id="barVram" max="100" value="0"></progress></div>
+    </div>
+    <div class="core-actions">
+      <button id="coreTextStart" class="primary" type="button">Iniciar texto</button>
+      <button id="coreVoiceStart" class="primary" type="button">Iniciar voz</button>
+      <button id="coreStop" class="stop" type="button" disabled>Detener activo</button>
+    </div>
+    <div id="systemStatus" role="status"></div>
+  </section>
   <div id="chatLog" class="chat-log" aria-live="polite"><p class="chat-empty">Escribe una instrucción para Mark.
     El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación de esta ventana no se guarda en el navegador.</p></div>
   <div id="chatStatus" class="chat-status" role="status"></div>
@@ -282,7 +325,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 <div id="notice" role="status"></div>
 <script nonce="{safe_nonce}">
 const csrf="{csrf}";
-const stateText={{offline:["Sistema desconectado","Escribe en el chat o inicia la voz para comenzar"],loading:["Inicializando","Cargando modelos locales de voz"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
+const stateText={{offline:["Sistema desconectado","Escribe en el chat o inicia la voz para comenzar"],loading:["Inicializando","Cargando el núcleo local"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
 recording:["Escuchando","Suelta la combinación para enviar"],transcribing:["Interpretando voz","Transcripción local en curso"],
 processing:["Procesando","Consultando el núcleo local"],speaking:["Respondiendo","Síntesis de voz activa"],
 cancelling:["Cancelando","Interrumpiendo el turno actual"],error:["Incidencia detectada","Consulta el detalle en pantalla"]}};
@@ -301,7 +344,7 @@ function effectiveQuality(){{if(document.hidden)return "paused";if(visualQuality
 return ["processing","transcribing","loading"].includes(currentState)?"eco":"balanced";}}
 function applyVisualQuality(){{document.body.dataset.quality=effectiveQuality();}}
 let lastPresenceRevision=-1;
-function setPresence(p){{if(typeof p.revision==="number")lastPresenceRevision=p.revision;const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
+function setPresence(p){{if(typeof p.revision==="number"&&p.revision<=lastPresenceRevision)return;if(typeof p.revision==="number")lastPresenceRevision=p.revision;const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
 const copy=stateText[currentState]||stateText.offline;$("stateTitle").textContent=copy[0];$("stateHint").textContent=p.error||copy[1];
 $("transcript").textContent=p.transcript||"";$("response").textContent=p.response||"";
 $("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));chatPresence(p);}}
@@ -310,8 +353,26 @@ async function loadPresence(){{try{{const data=await request("/api/voice/presenc
 catch(_){{presenceFailures++;if(presenceFailures>=8)chatDisconnected();else return;setPresence({{state:"offline"}});}}}}
 async function loadTools(){{try{{const data=await request("/api/tools");toolsCache=data.tools;renderTools();
 const voice=toolsCache.find(t=>t.id==="voice"),running=voice?.status==="running";
-$("voiceStart").disabled=!voice||running||voice.status==="unavailable";$("voiceStop").disabled=!running;chatRuntimeLabel();}}
+$("voiceStart").disabled=!voice||running||voice.status==="unavailable";$("voiceStop").disabled=!running;chatRuntimeLabel();renderCoreControls();}}
 catch(error){{tell(error.message);}}}}
+let systemSnapshot=null,systemLoading=false;
+function metric(id,bar,value,label){{$(id).textContent=label;const progress=$(bar);progress.value=Number.isFinite(value)?Math.max(0,Math.min(100,value)):0;progress.toggleAttribute("data-unavailable",!Number.isFinite(value));}}
+function renderSystem(s){{systemSnapshot=s;const core=s.core||{{state:"error",label:"Error"}},state=core.state||"error";
+const stateNode=$("coreState");stateNode.textContent=core.label||"No disponible";stateNode.className=`core-state ${{state}}`;
+const model=s.model||{{}};$("coreModel").textContent=`${{model.name||"Modelo no configurado"}} · ${{model.provider||"proveedor desconocido"}} · ${{model.context_tokens||"—"}} tokens`;
+$("runtimeText").textContent=s.runtimes?.text?.label||"No disponible";$("runtimeVoice").textContent=s.runtimes?.voice?.label||"No disponible";
+const cpu=s.cpu||{{}},ram=s.ram||{{}},gpu=s.gpu||{{}};
+metric("metricCpu","barCpu",cpu.available?Number(cpu.percent):NaN,cpu.available?`${{Number(cpu.percent).toFixed(1)}} %`:"No disponible");
+metric("metricRam","barRam",ram.available?Number(ram.percent):NaN,ram.available?`${{Math.round(ram.used_mib)}} / ${{Math.round(ram.total_mib)}} MiB`:"No disponible");
+metric("metricGpu","barGpu",gpu.available?Number(gpu.utilization_percent):NaN,gpu.available?`${{Number(gpu.utilization_percent).toFixed(1)}} %`:"No disponible");
+metric("metricVram","barVram",gpu.available?Number(gpu.memory_percent):NaN,gpu.available?`${{Math.round(gpu.memory_used_mib)}} / ${{Math.round(gpu.memory_total_mib)}} MiB`:"No disponible");
+$("systemStatus").textContent=gpu.available?gpu.name||"GPU NVIDIA disponible":`GPU: ${{gpu.reason||"lectura no disponible"}}`;renderCoreControls();}}
+async function loadSystem(){{if(systemLoading)return;systemLoading=true;try{{const data=await request("/api/system");renderSystem(data.system);}}
+catch(error){{$("systemStatus").textContent=error.message;}}finally{{systemLoading=false;}}}}
+function renderCoreControls(){{const byId=id=>toolsCache.find(t=>t.id===id),text=byId("chat_runtime"),voice=byId("voice");
+const textOn=text?.status==="running",voiceOn=voice?.status==="running",busy=textOn||voiceOn;
+$("coreTextStart").disabled=!text||busy||!["available","error"].includes(text.status);
+$("coreVoiceStart").disabled=!voice||voiceOn||voice.status==="unavailable";$("coreStop").disabled=!busy;}}
 async function loadModules(){{try{{const data=await request("/api/modules");modulesCache=data.modules||[];
 document.title=data.identity?.display_name||"Mark Scout";}}catch(error){{tell(error.message);}}}}
 function renderTools(){{const groups={{}};for(const tool of toolsCache)(groups[tool.category]??=[]).push(tool);
@@ -342,11 +403,19 @@ async function toolAction(id,action,confirmed=false){{const data=await request(`
 {{method:"POST",body:JSON.stringify({{confirmed}})}});await loadTools();return data.result;}}
 $("voiceStart").addEventListener("click",async()=>{{try{{await toolAction("voice","start");tell("Núcleo de voz iniciado.");}}catch(e){{tell(e.message);}}}});
 $("voiceStop").addEventListener("click",async()=>{{try{{await toolAction("voice","stop");setPresence({{state:"offline"}});tell("Núcleo de voz detenido.");}}catch(e){{tell(e.message);}}}});
+async function coreAction(id,action){{$("systemStatus").textContent="Aplicando…";try{{await toolAction(id,action);await loadSystem();}}
+catch(error){{$("systemStatus").textContent=error.message;}}}}
+$("coreTextStart").addEventListener("click",()=>coreAction("chat_runtime","start"));
+$("coreVoiceStart").addEventListener("click",()=>coreAction("voice","start"));
+$("coreStop").addEventListener("click",async()=>{{const voice=toolsCache.find(t=>t.id==="voice"&&t.status==="running");
+const text=toolsCache.find(t=>t.id==="chat_runtime"&&t.status==="running");if(voice)await coreAction("voice","stop");else if(text)await coreAction("chat_runtime","stop");}});
+function coreOpen(open){{$("corePanel").hidden=!open;$("coreToggle").setAttribute("aria-expanded",String(open));if(open)loadSystem();}}
+$("coreToggle").addEventListener("click",()=>coreOpen($("corePanel").hidden));
 $("menu").addEventListener("click",()=>drawer.classList.add("open"));$("closeDrawer").addEventListener("click",()=>drawer.classList.remove("open"));
 document.querySelectorAll("[data-module]").forEach(button=>button.addEventListener("click",()=>openModule(button.dataset.module)));
 $("closeModule").addEventListener("click",closeModule);modulePanel.addEventListener("click",event=>{{if(event.target===modulePanel)closeModule();}});
 modulePanel.addEventListener("click",event=>{{const button=event.target.closest("[data-quality]");if(button)setVisualQuality(button.dataset.quality);}});
-addEventListener("keydown",event=>{{if(event.key==="Escape"){{closeModule();drawer.classList.remove("open");}}}});
+addEventListener("keydown",event=>{{if(event.key==="Escape"){{closeModule();drawer.classList.remove("open");coreOpen(false);}}}});
 function bytesToBase64(buffer){{const bytes=new Uint8Array(buffer);let binary="";for(let offset=0;offset<bytes.length;offset+=32768){{
 binary+=String.fromCharCode(...bytes.subarray(offset,Math.min(offset+32768,bytes.length)));}}return btoa(binary);}}
 async function importVoiceFile(file){{if(file.size>24*1024*1024)throw new Error("El audio supera 24 MiB.");
@@ -463,6 +532,6 @@ for(let ring=0;ring<4;ring++){{const phase=t*.002-ring*.74,radius=105+ring*33+Ma
 for(let a=0;a<=Math.PI*2+.02;a+=.035){{const wave=Math.sin(a*(8+ring*2)+t*.008)*(5+17*mode)+Math.sin(a*3-t*.004)*4*mode;
 const r=radius+wave,x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r*.42;(a===0?ctx.moveTo(x,y):ctx.lineTo(x,y));}}
 ctx.strokeStyle=`rgba(77,221,250,${{.06+mode*.15-ring*.012}})`;ctx.lineWidth=1.2;ctx.stroke();}}}}
-requestAnimationFrame(render);loadTools();loadModules();loadPresence();setInterval(loadTools,3000);setInterval(loadPresence,250);
+requestAnimationFrame(render);loadTools();loadModules();loadPresence();loadSystem();setInterval(loadTools,3000);setInterval(loadPresence,250);setInterval(loadSystem,1500);
 </script>
 </body></html>"""

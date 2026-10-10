@@ -23,6 +23,7 @@ from .catalog import build_tool_catalog
 from .modules import build_module_snapshot
 from .runtime import ProcessManager
 from .server import ControlCenterHTTPServer
+from .system_status import SystemStatusMonitor
 from .text_chat import TextChatRequestStore
 from .voice_import import VoiceReferenceImporter
 
@@ -117,6 +118,7 @@ def serve() -> int:
             root, voice_tts_provider=tts_provider, piper_voice_path=settings.tts_voice_path
         )
         manager = ProcessManager(catalog)
+        system_monitor = SystemStatusMonitor(settings, manager)
         text_chat = TextChatRequestStore()
         database = Database(settings.database_path)
         project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
@@ -140,6 +142,7 @@ def serve() -> int:
             root,
             voice_importer=voice_importer.import_base64,
             text_chat=text_chat,
+            system_monitor=system_monitor,
         )
         endpoint = {
             "pid": os.getpid(),
@@ -190,6 +193,7 @@ def _bind_available_server(
     root: Path | None = None,
     voice_importer=None,
     text_chat: TextChatRequestStore | None = None,
+    system_monitor: SystemStatusMonitor | None = None,
 ) -> ControlCenterHTTPServer:
     project = root or project_root()
     last_error: OSError | None = None
@@ -204,6 +208,7 @@ def _bind_available_server(
                 module_snapshot=lambda: build_module_snapshot(project),
                 voice_importer=voice_importer,
                 text_chat=text_chat,
+                system_monitor=system_monitor,
                 version="Mark Scout · Desktop Alpha",
             )
         except OSError as exc:
