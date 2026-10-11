@@ -179,6 +179,11 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .chat-row label {{ flex:1; color:#86a9b3; font-size:11px; display:flex; align-items:center; gap:6px; cursor:pointer; }}
     .chat-row .primary,.chat-row .stop {{ padding:9px 13px; }}
     @keyframes blink {{ 50% {{ opacity:0; }} }}
+    .chat-log-wrap {{ position:relative; flex:1; min-height:0; display:flex; flex-direction:column; }}
+    #chatJump {{ position:absolute; right:22px; bottom:8px; display:none; border:1px solid #235363; background:#0a1a20;
+      color:#a9cbd5; padding:5px 10px; border-radius:2px; cursor:pointer; font-size:10px; letter-spacing:.08em; text-transform:uppercase; }}
+    #chatJump.show {{ display:block; }}
+    #chatJump:hover,#chatJump:focus-visible {{ border-color:var(--cyan); color:white; outline:none; }}
     body.chat-open .stage > .telemetry:first-child {{ visibility:hidden; }}
     body.chat-wide #chat {{ width:min(980px,calc(100vw - 24px)); }}
     body.chat-wide .core-wrap {{ opacity:.3; }}
@@ -293,8 +298,10 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     </div>
     <div id="systemStatus" role="status"></div>
   </section>
+  <div class="chat-log-wrap">
   <div id="chatLog" class="chat-log" aria-live="polite"><p class="chat-empty">Escribe una instrucción para Mark.
     El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación de esta ventana no se guarda en el navegador.</p></div>
+  <button id="chatJump" type="button">Ir al final ↓</button></div>
   <div id="chatStatus" class="chat-status" role="status"></div>
   <form id="chatForm" autocomplete="off">
     <textarea id="chatInput" maxlength="4000" rows="2" placeholder="Escribe a Mark… (Enter envía, Mayús+Enter salto de línea)" aria-label="Mensaje para Mark"></textarea>
@@ -465,8 +472,8 @@ if(!line.trim()){{flush();list=null;i++;continue;}}
 if(list&&/^\\s{{2,}}\\S/.test(line)){{const li=list.el.lastElementChild;li.append(document.createTextNode(" "));mdInline(line.trim(),li);i++;continue;}}
 list=null;para.push(line.trim());i++;}}flush();}}
 function chatSetText(text){{if(!turn||!text)return;const near=chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60;
-mdRender(text,turn.bubble.querySelector(".body"));turn.rendered=text;if(near)chatLog.scrollTop=chatLog.scrollHeight;}}
-function chatFinish(kind,detail=""){{if(!turn)return;const t=turn;turn=null;t.bubble.classList.remove("pending");
+mdRender(text,turn.bubble.querySelector(".body"));turn.rendered=text;if(near)chatLog.scrollTop=chatLog.scrollHeight;else $("chatJump").classList.add("show");}}
+function chatFinish(kind,detail=""){{if(!turn)return;const t=turn;turn=null;t.bubble.classList.remove("pending");t.bubble.removeAttribute("aria-busy");
 const seconds=((Date.now()-t.startedAt)/1000).toFixed(1);
 if(kind==="error"){{t.bubble.classList.add("failed");if(!t.bubble.querySelector(".body").textContent)chatSetTextOn(t,detail);chatMeta(t.bubble,`Error · ${{seconds}} s`);chatStatus(detail,true);}}
 else if(kind==="cancelled"){{chatMeta(t.bubble,`Cancelado · ${{seconds}} s`);chatStatus("Turno cancelado.");}}
@@ -501,7 +508,8 @@ const speak=$("chatSpeak").checked,minRevision=lastPresenceRevision;$("chatSend"
 try{{await request("/api/chat",{{method:"POST",body:JSON.stringify({{text,speak}})}});}}
 catch(error){{chatStatus(error.message,true);$("chatSend").disabled=false;return;}}
 chatInput.value="";chatAdd("user",text);const now=Date.now();
-turn={{text,bubble:chatAdd("mark","","pending"),startedAt:now,lastChange:now,lastState:"",lastResponse:"",active:false,cancelRequested:false,minRevision,rendered:""}};
+const bubble=chatAdd("mark","","pending");bubble.setAttribute("aria-busy","true");
+turn={{text,bubble,startedAt:now,lastChange:now,lastState:"",lastResponse:"",active:false,cancelRequested:false,minRevision,rendered:""}};
 chatStatus("Mensaje en cola…");chatButtons();loadTools();}}
 async function chatCancel(){{if(!turn||turn.cancelRequested)return;turn.cancelRequested=true;chatButtons();chatStatus("Cancelando…");
 try{{await request("/api/chat/cancel",{{method:"POST",body:"{{}}"}});}}catch(error){{chatStatus(error.message,true);}}}}
@@ -511,6 +519,10 @@ try{{localStorage.setItem("mark.chatOpen",open?"1":"0");}}catch(_){{}}if(open)ch
 $("chatForm").addEventListener("submit",event=>{{event.preventDefault();chatSend();}});
 chatInput.addEventListener("keydown",event=>{{if(event.key==="Enter"&&!event.shiftKey&&!event.isComposing){{event.preventDefault();chatSend();}}}});
 $("chatCancel").addEventListener("click",chatCancel);
+// Esc en el campo de texto cancela la respuesta en curso; "Ir al final" vuelve al último texto.
+chatInput.addEventListener("keydown",event=>{{if(event.key==="Escape"&&turn){{event.preventDefault();event.stopPropagation();chatCancel();}}}});
+chatLog.addEventListener("scroll",()=>{{if(chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60)$("chatJump").classList.remove("show");}});
+$("chatJump").addEventListener("click",()=>{{chatLog.scrollTop=chatLog.scrollHeight;$("chatJump").classList.remove("show");}});
 $("chatToggle").addEventListener("click",()=>chatOpen(!document.body.classList.contains("chat-open")));
 $("chatClose").addEventListener("click",()=>chatOpen(false));
 $("chatWide").addEventListener("click",()=>chatWide(!document.body.classList.contains("chat-wide")));

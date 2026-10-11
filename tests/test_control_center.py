@@ -620,6 +620,14 @@ class ChatPanelHTTPTests(ChatRoutingHTTPTests):
                        "p.revision<=turn.minRevision", 'id="chatWide"'):
             self.assertIn(marker, page if marker.startswith("id=") else chat)
 
+    def test_chat_keyboard_cancel_and_follow_controls(self) -> None:
+        from jarvis_local.control_center.web import render_dashboard
+
+        page = render_dashboard(csrf_token="c", nonce="n", version="v")
+        for marker in ('id="chatJump"', 'event.key==="Escape"&&turn', 'setAttribute("aria-busy","true")',
+                       'removeAttribute("aria-busy")'):
+            self.assertIn(marker, page)
+
     def test_cancel_requires_csrf_and_reaches_the_runtime_queue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
         connection.request(
