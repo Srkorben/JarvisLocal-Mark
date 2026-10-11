@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlsplit
 from .runtime import ControlCenterError, ProcessManager
 from .presence import PRESENCE_FIELDS, VoicePresenceStore
 from .system_status import SystemStatusMonitor
-from .text_chat import TextChatError, TextChatRequestStore
+from .text_chat import ChatTranscript, TextChatError, TextChatRequestStore
 from .voice_import import VoiceImportError
 from .web import render_dashboard
 
@@ -62,6 +62,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         self.icon_path = icon_path
         self.presence = presence or VoicePresenceStore()
         self.text_chat = text_chat or TextChatRequestStore()
+        self.chat_history = ChatTranscript()
         self.system_monitor = system_monitor
         self.module_snapshot = module_snapshot
         self.voice_importer = voice_importer
@@ -164,6 +165,9 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/voice/presence":
             self._json(HTTPStatus.OK, {"presence": self.server.presence.snapshot()})
             return
+        if parsed.path == "/api/chat/history":
+            self._json(HTTPStatus.OK, {"turns": self.server.chat_history.snapshot()})
+            return
         if parsed.path == "/api/chat/next":
             try:
                 raw_wait = parse_qs(parsed.query).get("wait", ["5"])[0]
@@ -219,6 +223,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 self._json_error(HTTPStatus.BAD_REQUEST, "invalid_presence", str(exc))
                 return
+            self.server.chat_history.observe(presence)
             self._json(HTTPStatus.OK, {"presence": presence})
             return
         if not self._authenticated():
@@ -243,6 +248,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 except Exception:
                     self.server.text_chat.discard(request["id"])
                     raise
+                self.server.chat_history.start(request)
                 self.server.presence.update(
                     {
                         "state": "queued",
@@ -275,6 +281,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             try:
                 self._read_json(allowed_fields=frozenset())
                 result = self.server.text_chat.cancel()
+                self.server.chat_history.mark_cancel()
             except TextChatError as exc:
                 self._json(HTTPStatus.CONFLICT, {"error": exc.as_dict()})
                 return
@@ -282,6 +289,15 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
                 return
             self._json(HTTPStatus.OK, {"result": result})
+            return
+        if parsed.path == "/api/chat/history/clear":
+            try:
+                self._read_json(allowed_fields=frozenset())
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                return
+            removed = self.server.chat_history.clear()
+            self._json(HTTPStatus.OK, {"result": {"outcome": "cleared", "removed": removed}})
             return
         if parsed.path == "/api/voice/reference/import":
             if self.server.voice_importer is None:
@@ -355,6 +371,8 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                     # La voz atiende también el chat escrito: el runtime de
                     # texto cede el LLM para no cargar dos copias del modelo.
                     self.server.manager.stop("chat_runtime")
+                    # Un turno escrito en curso se pierde con el runtime de texto.
+                    self.server.chat_history.observe({"state": "offline"})
                 result = self.server.manager.start(
                     tool_id, confirmed=payload.get("confirmed") is True
                 )
@@ -365,8 +383,10 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             else:
                 result = self.server.manager.stop(tool_id)
                 if tool_id in _CONVERSATION_RUNTIMES:
-                    self.server.presence.update(
-                        {"state": "offline", "transcript": "", "response": "", "error": ""}
+                    self.server.chat_history.observe(
+                        self.server.presence.update(
+                            {"state": "offline", "transcript": "", "response": "", "error": ""}
+                        )
                     )
         except ControlCenterError as exc:
             self._json(exc.http_status, {"error": exc.as_dict()})

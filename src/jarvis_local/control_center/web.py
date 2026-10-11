@@ -157,7 +157,8 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     body.chat-open .conversation {{ display:none; }}
     .chat-head {{ display:flex; align-items:center; gap:10px; padding:12px 14px; border-bottom:1px solid #15343e; }}
     .chat-head h2 {{ margin:0; flex:1; text-transform:uppercase; letter-spacing:.18em; font-size:12px; font-weight:600; }}
-    #chatRuntime {{ color:#5f8793; text-transform:uppercase; letter-spacing:.1em; font-size:9px; }}
+    #chatRuntime {{ color:#5f8793; text-transform:uppercase; letter-spacing:.1em; font-size:9px; white-space:nowrap; }}
+    .chat-title {{ flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }}
     #chatRuntime.on {{ color:var(--cyan); }}
     .chat-log {{ flex:1; min-height:0; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }}
     .chat-empty {{ color:#557580; font-size:12px; line-height:1.6; margin:auto 0; text-align:center; }}
@@ -187,9 +188,9 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     body.chat-open .stage > .telemetry:first-child {{ visibility:hidden; }}
     body.chat-wide #chat {{ width:min(980px,calc(100vw - 24px)); }}
     body.chat-wide .core-wrap {{ opacity:.3; }}
-    #chatWide {{ border:1px solid #1b4452; background:transparent; color:#8cb0bb; cursor:pointer;
+    #chatWide,#chatClear {{ border:1px solid #1b4452; background:transparent; color:#8cb0bb; cursor:pointer;
       font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:2px; }}
-    #chatWide:hover,#chatWide:focus-visible {{ color:white; border-color:var(--cyan); outline:none; }}
+    #chatClear:hover,#chatClear:focus-visible,#chatWide:hover,#chatWide:focus-visible {{ color:white; border-color:var(--cyan); outline:none; }}
     #coreToggle {{ border:1px solid #1b4452; background:#07151a; color:#8cb0bb; cursor:pointer;
       font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:5px 8px; border-radius:2px; }}
     #coreToggle:hover,#coreToggle:focus-visible,#coreToggle[aria-expanded="true"] {{ color:white; border-color:var(--cyan); outline:none; }}
@@ -274,8 +275,9 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
   </footer>
 </div>
 <section id="chat" aria-label="Conversación escrita con Mark">
-  <div class="chat-head"><h2>Conversación</h2><span id="chatRuntime">Núcleo apagado</span>
+  <div class="chat-head"><div class="chat-title"><h2>Conversación</h2><span id="chatRuntime">Apagado</span></div>
     <button id="coreToggle" type="button" aria-controls="corePanel" aria-expanded="false">Núcleo</button>
+    <button id="chatClear" type="button" title="Borrar la conversación visible">Borrar</button>
     <button id="chatWide" type="button" aria-pressed="false" title="Ampliar o reducir el área de conversación">Ampliar</button>
     <button id="chatClose" class="close" type="button" aria-label="Cerrar chat">×</button></div>
   <section id="corePanel" aria-label="Estado y controles del núcleo" hidden>
@@ -300,7 +302,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
   </section>
   <div class="chat-log-wrap">
   <div id="chatLog" class="chat-log" aria-live="polite"><p class="chat-empty">Escribe una instrucción para Mark.
-    El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación de esta ventana no se guarda en el navegador.</p></div>
+    El núcleo de texto se inicia al enviar el primer mensaje.<br>La conversación se conserva en memoria mientras el centro de control está abierto; no se guarda en disco ni en el navegador.</p></div>
   <button id="chatJump" type="button">Ir al final ↓</button></div>
   <div id="chatStatus" class="chat-status" role="status"></div>
   <form id="chatForm" autocomplete="off">
@@ -499,8 +501,8 @@ if(turn&&now-turn.lastChange>CHAT_STALL_MS)chatFinish("error","Sin respuesta del
 function chatDisconnected(){{chatStatus("Sin conexión con el panel local. Reintentando…",true);
 if(turn&&Date.now()-turn.lastChange>15000)chatFinish("error","Se perdió la conexión con el panel local.");}}
 function chatRuntimeLabel(){{const byId=id=>toolsCache.find(t=>t.id===id);const voice=byId("voice"),chat=byId("chat_runtime"),node=$("chatRuntime");
-const on=voice?.status==="running"?"Núcleo de voz activo":chat?.status==="running"?"Núcleo de texto activo":"";
-node.textContent=on||"Núcleo apagado";node.classList.toggle("on",Boolean(on));}}
+const on=voice?.status==="running"?"Voz activa":chat?.status==="running"?"Texto activo":"";
+node.textContent=on||"Apagado";node.classList.toggle("on",Boolean(on));}}
 async function chatSend(){{if(turn)return;const text=chatNormalize(chatInput.value);
 if(!text){{chatStatus("Escribe un mensaje antes de enviarlo.",true);return;}}
 if(text.length>CHAT_MAX){{chatStatus(`El mensaje supera ${{CHAT_MAX}} caracteres.`,true);return;}}
@@ -519,6 +521,23 @@ try{{localStorage.setItem("mark.chatOpen",open?"1":"0");}}catch(_){{}}if(open)ch
 $("chatForm").addEventListener("submit",event=>{{event.preventDefault();chatSend();}});
 chatInput.addEventListener("keydown",event=>{{if(event.key==="Enter"&&!event.shiftKey&&!event.isComposing){{event.preventDefault();chatSend();}}}});
 $("chatCancel").addEventListener("click",chatCancel);
+// Historial en memoria del centro de control: sobrevive a recargar el panel o la app WPF.
+async function loadHistory(){{let turns=[];try{{turns=(await request("/api/chat/history")).turns||[];}}catch(_){{return;}}
+if(!turns.length||turn)return;
+for(const t of turns){{chatAdd("user",t.user);const bubble=chatAdd("mark","",t.outcome==="pending"?"pending":""),body=bubble.querySelector(".body");
+if(t.assistant)mdRender(t.assistant,body);
+if(t.outcome==="pending"){{bubble.setAttribute("aria-busy","true");const now=Date.now();
+turn={{text:t.user,bubble,startedAt:now,lastChange:now,lastState:"",lastResponse:t.assistant||"",active:Boolean(t.assistant),cancelRequested:false,minRevision:-1,rendered:t.assistant||""}};
+chatButtons();chatStatus("Recuperando la respuesta en curso…");}}
+else if(t.outcome==="error"){{bubble.classList.add("failed");if(!t.assistant)body.textContent=t.error||"Error del núcleo.";chatMeta(bubble,"Error · recuperado");}}
+else chatMeta(bubble,t.outcome==="cancelled"?"Cancelado · recuperado":"Recuperado");}}
+chatLog.scrollTop=chatLog.scrollHeight;}}
+async function chatClearHistory(){{if(turn){{tell("Espera a que termine la respuesta en curso.");return;}}
+if(!window.confirm("¿Borrar la conversación visible? Solo se borra de la memoria del centro de control; Mark conserva el contexto hasta que reinicies el núcleo."))return;
+try{{await request("/api/chat/history/clear",{{method:"POST",body:"{{}}"}});const note=document.createElement("p");note.className="chat-empty";
+note.textContent="Conversación borrada.";chatLog.replaceChildren(note);chatStatus("");}}catch(error){{chatStatus(error.message,true);}}}}
+$("chatClear").addEventListener("click",chatClearHistory);
+loadHistory();
 // Esc en el campo de texto cancela la respuesta en curso; "Ir al final" vuelve al último texto.
 chatInput.addEventListener("keydown",event=>{{if(event.key==="Escape"&&turn){{event.preventDefault();event.stopPropagation();chatCancel();}}}});
 chatLog.addEventListener("scroll",()=>{{if(chatLog.scrollHeight-chatLog.scrollTop-chatLog.clientHeight<60)$("chatJump").classList.remove("show");}});

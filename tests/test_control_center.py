@@ -628,6 +628,27 @@ class ChatPanelHTTPTests(ChatRoutingHTTPTests):
                        'removeAttribute("aria-busy")'):
             self.assertIn(marker, page)
 
+    def test_chat_history_lives_in_memory_and_needs_session(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/api/chat/history")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 401)
+        status, _ = self.post("/api/chat", {"text": "hola", "speak": False})
+        self.assertEqual(status, 202)
+        self.server.chat_history.observe({"state": "processing", "transcript": "hola", "response": "Hola."})
+        self.server.chat_history.observe({"state": "idle", "transcript": "hola", "response": "Hola."})
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/api/chat/history", headers={"Cookie": "jarvis_cc=secret-token"})
+        response = connection.getresponse()
+        turns = json.loads(response.read())["turns"]
+        connection.close()
+        self.assertEqual([(t["user"], t["assistant"], t["outcome"]) for t in turns], [("hola", "Hola.", "done")])
+        status, body = self.post("/api/chat/history/clear", {})
+        self.assertEqual((status, body["result"]["removed"]), (200, 1))
+        self.assertEqual(self.server.chat_history.snapshot(), [])
+
     def test_cancel_requires_csrf_and_reaches_the_runtime_queue(self) -> None:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
         connection.request(

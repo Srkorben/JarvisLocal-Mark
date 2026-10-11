@@ -266,3 +266,54 @@ class PanelCancelTests(IsolatedAsyncioTestCase):
             loop.cancel()
             await asyncio.gather(loop, return_exceptions=True)
             self.assertEqual(manager.last_result.outcome, "cancelled")
+
+
+class ChatTranscriptTests(TestCase):
+    def request(self, text="hola", request_id="r1"):
+        return {"id": request_id, "text": text, "speak": False, "submitted_at": "2026-10-11T00:00:00+00:00"}
+
+    def test_tracks_a_turn_until_the_final_answer(self) -> None:
+        from jarvis_local.control_center.text_chat import ChatTranscript
+
+        transcript = ChatTranscript()
+        transcript.start(self.request())
+        # Antes de procesar, un "idle" del arranque no cierra el turno.
+        transcript.observe({"state": "idle", "transcript": "", "response": ""})
+        self.assertEqual(transcript.snapshot()[0]["outcome"], "pending")
+        transcript.observe({"state": "processing", "transcript": "hola", "response": "Ho"})
+        transcript.observe({"state": "processing", "transcript": "hola", "response": "Hola, soy Mark."})
+        transcript.observe({"state": "idle", "transcript": "hola", "response": "Hola, soy Mark."})
+        turn = transcript.snapshot()[0]
+        self.assertEqual((turn["outcome"], turn["assistant"]), ("done", "Hola, soy Mark."))
+        self.assertNotIn("_active", turn)
+
+    def test_ignores_foreign_voice_turns_and_records_cancel_and_errors(self) -> None:
+        from jarvis_local.control_center.text_chat import ChatTranscript
+
+        transcript = ChatTranscript()
+        transcript.start(self.request("primero", "r1"))
+        transcript.observe({"state": "processing", "transcript": "turno de voz", "response": "otra cosa"})
+        self.assertEqual(transcript.snapshot()[0]["assistant"], "")
+        transcript.mark_cancel()
+        transcript.observe({"state": "processing", "transcript": "primero", "response": "parcial"})
+        transcript.observe({"state": "idle", "transcript": "primero", "response": "parcial"})
+        self.assertEqual(transcript.snapshot()[0]["outcome"], "cancelled")
+        transcript.start(self.request("segundo", "r2"))
+        transcript.observe({"state": "error", "transcript": "segundo", "error": "fallo del modelo"})
+        self.assertEqual(transcript.snapshot()[1]["error"], "fallo del modelo")
+        transcript.start(self.request("tercero", "r3"))
+        transcript.observe({"state": "offline"})
+        self.assertEqual(transcript.snapshot()[2]["outcome"], "error")
+
+    def test_clear_keeps_the_running_turn_and_history_is_bounded(self) -> None:
+        from jarvis_local.control_center.text_chat import ChatTranscript
+
+        transcript = ChatTranscript(max_turns=3)
+        for index in range(4):
+            transcript.start(self.request(f"m{index}", f"r{index}"))
+            transcript.observe({"state": "processing", "transcript": f"m{index}", "response": "ok"})
+            transcript.observe({"state": "idle", "transcript": f"m{index}", "response": "ok"})
+        self.assertEqual([turn["user"] for turn in transcript.snapshot()], ["m1", "m2", "m3"])
+        transcript.start(self.request("en curso", "r9"))  # desplaza a "m1" (límite 3)
+        self.assertEqual(transcript.clear(), 2)
+        self.assertEqual([turn["user"] for turn in transcript.snapshot()], ["en curso"])
