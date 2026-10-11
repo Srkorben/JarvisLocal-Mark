@@ -1,7 +1,50 @@
 # Mark / JarvisLocal: documento de transferencia
 
-Última actualización: 10 de octubre de 2026 (entrega Codex del monitor Núcleo).
+Última actualización: 11 de octubre de 2026 (sesión 3 de Claude Code).
 Este documento permite continuar sin depender de las conversaciones anteriores.
+
+## Objetivo y referencias
+
+**Mark** (proyecto técnico **JarvisLocal**) es un asistente de IA local para Windows 11. Usa Qwen3-8B en `llama-server`, STT faster-whisper, TTS Piper o Chatterbox, un centro de control loopback y una app WPF/WebView2. El objetivo es un asistente de uso diario: interfaz funcional, respuestas rápidas, privacidad efectiva y capacidad progresiva de actuar sobre el escritorio.
+
+- **Ref 1.0, rendimiento** (PR #1, `claude/ref1-latency`). Diagnóstico y corrección de la latencia:
+  - Chatterbox CUDA hundía al LLM de ~55 a ~6 tokens/s;
+  - la GPU queda reservada para el LLM;
+  - Piper en CPU como voz provisional (calidad rechazada);
+  - streaming, carga diferida y trazas.
+- **Ref 2.0, evolución integral** (PR #2, `claude/ref2-chat-ui`): UI/UX, chat, centro de control, servicios y modelos, memoria, herramientas, control de Windows, automatización y visión. **Es la prioridad actual.**
+
+## 0a. Sesión 3 de Claude Code (11 de octubre de 2026)
+
+| Commit | Rama | Contenido |
+|---|---|---|
+| `59683fb` | `claude/ref1-latency` | Prueba de catálogo determinista (misma fijación que Codex). **CI del PR #1 sin fallos conocidos** en Linux |
+| `5678c03` | `claude/ref2-chat-ui` | Fusión de `claude/ref1-latency` (merge normal, sin reescribir historia) |
+| `6b63079` | `claude/ref2-chat-ui` | Chat: Esc cancela la respuesta en curso, botón "Ir al final", `aria-busy` durante el streaming |
+| `81745d7` | `claude/ref2-chat-ui` | **Privacidad H-01 corregida** (ver más abajo) |
+
+- Se conservó íntegra la entrega de Codex (`90f484c`, `6ce5c29`). Un panel de núcleo equivalente que Claude tenía sin publicar se **descartó** para no duplicar el monitor de Codex; queda solo en la rama local `backup/local-core-panel`, que no se publica.
+- **Pruebas (nube, Linux):** 163 pasan, 0 fallan.
+- **Chromium (Playwright)**, contra el servidor real del panel con un runtime simulado y el `SystemStatusMonitor` de Codex con hardware simulado:
+  - streaming, cancelación (botón y Esc), error y mensaje vacío;
+  - Markdown y texto malicioso (0 `<img>`, 0 `<script>`);
+  - mensaje repetido, modo ampliado, panel Núcleo (VRAM) e "Ir al final".
+- **No probado en Windows ni en WPF en esta sesión.**
+
+### H-01: qué cambió exactamente (`81745d7`)
+
+- **Con `logging.store_conversation_content = false`** (valor por defecto):
+  - el orquestador **no escribe** el texto del usuario ni el de Mark en SQLite;
+  - el historial vive en memoria del proceso (32 sesiones × 60 mensajes), así que el modelo conserva el contexto mientras el núcleo está abierto y lo pierde al cerrarlo;
+  - en la auditoría de herramientas, la intención se guarda como `[contenido no almacenado: N caracteres]`. Se conservan la herramienta, los argumentos, el riesgo, la política y el resultado, y la cadena hash sigue siendo válida.
+- **Con `true`:** el comportamiento anterior (mensajes e intención en claro).
+- **Conversaciones guardadas antes:** **no se borran**.
+- **Pruebas** (`tests/test_privacy.py`): recorren **todas** las tablas de SQLite con los dos valores. La antigua `test_normal_response_is_persisted` dependía del defecto y ahora activa el almacenamiento de forma explícita.
+- **Contenido que todavía puede guardarse, no conversacional pero sí sensible:**
+  - los **argumentos** de las herramientas en la auditoría, por ejemplo el texto de `create_note` o las rutas;
+  - `expected_result`, que redacta el modelo;
+  - la intención de `--rag-query` en la CLI.
+  - Revisarlos antes de prometer "ningún contenido privado".
 
 ## 0. Entrega publicada por Codex
 
@@ -71,8 +114,8 @@ Commits finales:
 
 | Rama | Commit | Descripción |
 |---|---|---|
-| `claude/ref1-latency` | `4ca4bd1` | Último commit de Ref 1.0 (resultados de Piper) |
-| `claude/ref2-chat-ui` | `90f484c` | Monitor Núcleo, endpoint autenticado y panel de recursos |
+| `claude/ref1-latency` | `59683fb` | Prueba de catálogo determinista (sesión 3) |
+| `claude/ref2-chat-ui` | último de la sesión 3 | Monitor Núcleo (Codex), chat accesible y H-01 corregido |
 | `master` | `bd4a876` | Sin cambios |
 
 La instalación del propietario (`C:\Users\andcb\Documents\AI Local\JarvisLocal`) está en `master` y sin cambios locales; se comprobó con `git status`. **No hay interfaz local sin publicar.**
@@ -173,7 +216,7 @@ La raíz efectiva es `JarvisLocal-ref1`, con base de datos y registros propios e
   - Markdown y texto malicioso: 0 `<img>`, 0 `<script>`, `window.__xss` sin definir;
   - mensaje repetido y modo ampliado.
 
-### Hallazgo de privacidad H-01 (sin corregir)
+### Hallazgo de privacidad H-01 (corregido en `81745d7`; ver sección 0a; abajo, la descripción original)
 
 Procede de la auditoría del 9 de octubre (`docs/` en la rama `claude/jarvislocal-mark-ahioni`, commit `5f921b9`).
 - **El problema:** `logging.store_conversation_content = false` **no tiene efecto**. Las conversaciones (`database.py`, mensajes) y las intenciones se guardan **en claro** en SQLite.
@@ -203,12 +246,10 @@ Procede de la auditoría del 9 de octubre (`docs/` en la rama `claude/jarvisloca
 
 ## 5. Pruebas y errores conocidos
 
-- **Linux (nube), en `741ad7f`:** 154 pasan y 1 falla.
-- **La que falla:** `CatalogTests::test_catalog_preserves_nine_shortcuts_and_adds_3d_integration`.
-  - Exige ejecutables de Windows y Godot. Ya fallaba en `master` y también falla en la CI de Windows.
-  - Su corrección pertenece a I-1.1, **no autorizada**. No convertirla en SKIP sin aprobación.
-- **CI** (`.github/workflows/tests.yml`): Windows y Linux, solo con esa misma falla.
-- **Interfaz local del propietario:** puede tener cambios en su instalación que no están en GitHub. Antes de integrar, comparar su `web.py` local con esta rama.
+- **Linux (nube), sesión 3:** 163 pasan y 0 fallan.
+- **Prueba del catálogo:** corregida con una fijación determinista en ambas ramas, sin SKIP ni borrado.
+- **CI** (`.github/workflows/tests.yml`): Windows y Linux. Revisar el resultado de los últimos commits en GitHub.
+- **Interfaz local del propietario:** la instalación está en `master`, sin cambios locales (comprobado en la sesión 2).
 - **Configuración local:** el `config\jarvis.toml` del propietario sigue pidiendo Chatterbox CUDA. Con este código, sin `allow_gpu`, se usará Piper.
 
 ## 6. Riesgos de integración
@@ -237,16 +278,37 @@ python -m pytest -q
 2. Probar en real las herramientas `get_current_time` y `list_directory`, y una que requiera confirmación, como `open_file`. El runtime de texto deniega las confirmaciones: comprobar que el mensaje se entiende.
 3. Probar la app WPF con `set JARVISLOCAL_ROOT=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1` y `runtime\desktop\JarvisLocal.exe` en la misma consola con `PYTHONPATH`.
 4. "Responder también con voz" usa Piper, cuya voz fue rechazada.
-5. Sin historial: al recargar la página se pierde la conversación visible, aunque el núcleo mantiene la sesión. Antes de construirlo hay que corregir H-01.
+5. Sin historial: al recargar la página se pierde la conversación visible, aunque el núcleo mantiene el contexto en memoria. H-01 ya está corregido, así que el historial puede diseñarse: en memoria por defecto y persistente solo con `store_conversation_content = true`.
 6. Una respuesta muy larga se re-renderiza completa en cada actualización (cada 250 ms). Es aceptable hasta unos 16 KB, el límite de presencia.
+
+## 7 ter. Recuperar el entorno de prueba en Windows (sin tocar la instalación)
+
+En `C:\Users\andcb\Documents\AI Local` ya existen:
+- `JarvisLocal`: instalación principal, en `master`;
+- `JarvisLocal-ref1`: carpeta experimental en `claude/ref2-chat-ui`, con enlaces `mklink /J` a `.venv`, `models` y `runtime` de la instalación. Para quitar un enlace se usa `rmdir`, nunca `del /s`.
+
+Pasos, un comando `cmd` por paso:
+1. `git -C "%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1" pull --ff-only`
+2. `cd /d "%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1"`
+3. `set "PYTHONPATH=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1\src"`
+4. `.venv\Scripts\python.exe -m jarvis_local.control_center --launch` para el navegador. Para la app WPF: `set "JARVISLOCAL_ROOT=%CD%"` y después `runtime\desktop\JarvisLocal.exe`.
+
+La carpeta experimental usa su propio `data\`, así que el chat empieza con la base de datos vacía.
+
+## 7 quater. Decisiones que requieren autorización del propietario
+
+1. **Voz definitiva:** Piper fue rechazada. La prueba B (Chatterbox en CPU con referencia autorizada) está pendiente, igual que la comparación de acento neutro, que requiere descargar un modelo.
+2. **Integración en la instalación principal:** fusionar los PR #1 y #2, con copia de seguridad de `config\jarvis.toml` y `data\`.
+3. **Historial persistente:** activar o no `store_conversation_content = true`.
+4. **Argumentos de herramientas en la auditoría:** decidir si se redactan también cuando el almacenamiento está desactivado.
 
 ## 8. Primera tarea concreta de la siguiente sesión
 
-**Validar y pulir el chat en Windows 11, sin benchmarks.**
+**Validar y pulir el chat y el panel Núcleo en Windows 11 y WPF, sin benchmarks** (sección 7 ter).
 1. Guiar al propietario para abrir el panel con la rama `claude/ref2-chat-ui` (carpeta `JarvisLocal-ref1` + `PYTHONPATH`), sin tocar su instalación.
 2. Enviar 3 mensajes reales a Qwen: corto, largo y con herramienta. Probar Cancelar y comprobar la app WPF.
 3. Corregir lo que aparezca.
 4. Después, siguiente entrega de Ref 2.0:
-   - estado y control del núcleo desde el chat (iniciar y detener texto o voz, uso de VRAM);
+   - historial de la conversación en memoria del núcleo, recuperable al recargar la página (respetando H-01);
    - historial de la sesión recuperable desde el núcleo, no desde el navegador;
    - flujo de importación de la voz de 20 s integrado en la UI.
