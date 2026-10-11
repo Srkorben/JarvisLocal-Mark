@@ -22,14 +22,27 @@ Este documento permite continuar sin depender de las conversaciones anteriores.
 | `5678c03` | `claude/ref2-chat-ui` | Fusión de `claude/ref1-latency` (merge normal, sin reescribir historia) |
 | `6b63079` | `claude/ref2-chat-ui` | Chat: Esc cancela la respuesta en curso, botón "Ir al final", `aria-busy` durante el streaming |
 | `81745d7` | `claude/ref2-chat-ui` | **Privacidad H-01 corregida** (ver más abajo) |
+| `062b3b6` | `claude/ref2-chat-ui` | **Historial recuperable en memoria** del centro de control (ver más abajo) y cabecera del chat reorganizada |
 
 - Se conservó íntegra la entrega de Codex (`90f484c`, `6ce5c29`). Un panel de núcleo equivalente que Claude tenía sin publicar se **descartó** para no duplicar el monitor de Codex; queda solo en la rama local `backup/local-core-panel`, que no se publica.
-- **Pruebas (nube, Linux):** 163 pasan, 0 fallan.
+- **Pruebas (nube, Linux):** 167 pasan, 0 fallan.
 - **Chromium (Playwright)**, contra el servidor real del panel con un runtime simulado y el `SystemStatusMonitor` de Codex con hardware simulado:
   - streaming, cancelación (botón y Esc), error y mensaje vacío;
   - Markdown y texto malicioso (0 `<img>`, 0 `<script>`);
   - mensaje repetido, modo ampliado, panel Núcleo (VRAM) e "Ir al final".
 - **No probado en Windows ni en WPF en esta sesión.**
+
+### Historial del chat (`062b3b6`)
+
+- **Dónde vive:** el centro de control guarda en memoria los últimos 50 turnos (`ChatTranscript` en `control_center/text_chat.py`): texto del usuario, respuesta final y resultado (terminado, cancelado o error).
+- **De dónde sale:** de lo que el servidor ya ve, es decir `/api/chat`, la presencia, las cancelaciones y las detenciones del runtime.
+- **Privacidad:** **no se escribe en disco ni en el navegador** y desaparece al cerrar el centro de control, en coherencia con H-01.
+- **Endpoints:**
+  - `GET /api/chat/history`, con cookie de sesión;
+  - `POST /api/chat/history/clear`, con CSRF. Conserva el turno que siga en curso.
+- **En la interfaz:** al cargar el panel o la app WPF se restaura la conversación, incluido un turno todavía en curso. Hay un botón "Borrar".
+- **Límite:** borrar el historial visible **no** reinicia el contexto del modelo. El runtime conserva su memoria de sesión hasta reiniciar el núcleo.
+- **Verificado en Chromium:** tras recargar se recuperan 12 de 12 mensajes, con su Markdown y su resultado. Tras borrar y recargar quedan 0.
 
 ### H-01: qué cambió exactamente (`81745d7`)
 
@@ -278,7 +291,7 @@ python -m pytest -q
 2. Probar en real las herramientas `get_current_time` y `list_directory`, y una que requiera confirmación, como `open_file`. El runtime de texto deniega las confirmaciones: comprobar que el mensaje se entiende.
 3. Probar la app WPF con `set JARVISLOCAL_ROOT=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1` y `runtime\desktop\JarvisLocal.exe` en la misma consola con `PYTHONPATH`.
 4. "Responder también con voz" usa Piper, cuya voz fue rechazada.
-5. Sin historial: al recargar la página se pierde la conversación visible, aunque el núcleo mantiene el contexto en memoria. H-01 ya está corregido, así que el historial puede diseñarse: en memoria por defecto y persistente solo con `store_conversation_content = true`.
+5. Historial: **implementado en memoria** (`062b3b6`). Pendientes: persistirlo solo si `store_conversation_content = true`, y una opción "Nueva conversación" que reinicie también el contexto del modelo.
 6. Una respuesta muy larga se re-renderiza completa en cada actualización (cada 250 ms). Es aceptable hasta unos 16 KB, el límite de presencia.
 
 ## 7 ter. Recuperar el entorno de prueba en Windows (sin tocar la instalación)
@@ -309,6 +322,6 @@ La carpeta experimental usa su propio `data\`, así que el chat empieza con la b
 2. Enviar 3 mensajes reales a Qwen: corto, largo y con herramienta. Probar Cancelar y comprobar la app WPF.
 3. Corregir lo que aparezca.
 4. Después, siguiente entrega de Ref 2.0:
-   - historial de la conversación en memoria del núcleo, recuperable al recargar la página (respetando H-01);
+   - "Nueva conversación": reiniciar también el contexto del modelo, que hoy exige reiniciar el núcleo;
    - historial de la sesión recuperable desde el núcleo, no desde el navegador;
    - flujo de importación de la voz de 20 s integrado en la UI.
