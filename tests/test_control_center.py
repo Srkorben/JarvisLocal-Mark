@@ -9,6 +9,7 @@ from pathlib import Path
 from shutil import copyfile
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from jarvis_local.control_center.catalog import ToolSpec, build_tool_catalog
 from jarvis_local.control_center import launcher as launcher_module
@@ -74,7 +75,13 @@ class CatalogTests(TestCase):
         # cambiar de resultado cuando el usuario enrola o elimina su voz real.
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            catalog = build_tool_catalog(root)
+            platform_executable = root / "platform-tool.exe"
+            platform_executable.touch()
+            with patch(
+                "jarvis_local.control_center.catalog._windows_executable",
+                return_value=platform_executable,
+            ):
+                catalog = build_tool_catalog(root)
             self.assertEqual(len(catalog), 11)
             self.assertEqual(
                 {item.source for item in catalog.values()},
