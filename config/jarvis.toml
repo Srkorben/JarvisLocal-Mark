@@ -152,6 +152,10 @@ default_tool_timeout_seconds = 15
 
 [logging]
 level = "INFO"
+# false: el texto de las conversaciones solo vive en memoria del proceso (para dar
+# contexto al modelo) y no se guarda en SQLite; la auditoría registra las acciones
+# sin el texto del usuario. true: se guardan mensajes e intención en claro.
+# Cambiarlo no borra conversaciones guardadas antes.
 store_conversation_content = false
 store_tool_output = false
 
