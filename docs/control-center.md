@@ -17,7 +17,7 @@ tres restantes no pertenecen a este proyecto y se conservan sin modificaciones.
 | Diagnóstico | PowerShell + `Diagnose-Jarvis.ps1` | `.venv`, modelos y SQLite |
 | Enrolar mi voz | PowerShell + `Enroll-OwnVoice.ps1` | micrófono, `.venv` |
 | Instalar o reparar | PowerShell + `Setup.ps1` | Python 3.12 y red para instalación |
-| Preparar clonación | PowerShell + `Setup-VoiceClone.ps1` | red, ~3,21 GB, entorno aislado |
+| Preparar clonación | PowerShell + `Setup-XTTS.ps1` | red, ~2,09 GB, entorno aislado |
 | Preparar audio | PowerShell + `Setup-AudioModels.ps1` | red y espacio para modelos |
 
 Inicialmente fuera de alcance: `Codex Admin YOLO.lnk`, `Codex Admin YOLO - Cuenta

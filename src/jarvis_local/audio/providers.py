@@ -450,6 +450,7 @@ class ChatterboxTTSProvider(TTSProvider):
                 "exaggeration": self.exaggeration,
                 "cfg_weight": self.cfg_weight,
                 "temperature": self.temperature,
+                "speed": getattr(self, "speed", 1.0),
             }
             process = self._process
             try:
@@ -540,6 +541,68 @@ class ChatterboxTTSProvider(TTSProvider):
             await self._stop_process()
 
 
+class XTTSTTSProvider(ChatterboxTTSProvider):
+    """XTTS-v2 aislado con condicionamiento de voz precalculado y cancelación dura."""
+
+    name = "xtts"
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.speed = settings.tts_speed
+        self.log_path = settings.data_dir / "logs" / "xtts-worker.log"
+
+    def _validate_files(self) -> None:
+        required = {
+            "python": self.python,
+            "model_path": self.model_path,
+            "reference_path": self.reference_path,
+            "consent_path": self.consent_path,
+        }
+        missing = [name for name, path in required.items() if path is None]
+        if missing:
+            raise AudioError(
+                "clone_not_configured",
+                "Falta configuración de XTTS: " + ", ".join(missing),
+                component="voice_clone",
+            )
+        if not self.python.is_file():
+            raise AudioError(
+                "clone_environment_missing",
+                f"No existe el Python aislado de XTTS: {self.python}",
+                component="voice_clone",
+            )
+        model_files = (
+            "config.json",
+            "dvae.pth",
+            "model.pth",
+            "speakers_xtts.pth",
+            "vocab.json",
+        )
+        absent = [name for name in model_files if not (self.model_path / name).is_file()]
+        if absent:
+            raise AudioError(
+                "clone_model_missing",
+                "Faltan archivos de XTTS-v2: " + ", ".join(absent),
+                component="voice_clone",
+            )
+        validate_own_voice_consent(self.reference_path, self.consent_path)
+
+    def _command(self) -> list[str]:
+        return [
+            str(self.python),
+            "-m",
+            "jarvis_local.xtts_worker",
+            "--model-dir",
+            str(self.model_path),
+            "--reference",
+            str(self.reference_path),
+            "--device",
+            self.device,
+            "--language",
+            "es",
+        ]
+
+
 def create_stt_provider(settings: Settings) -> STTProvider:
     if settings.stt_provider == "faster_whisper":
         return FasterWhisperSTTProvider(settings)
@@ -552,16 +615,19 @@ def create_stt_provider(settings: Settings) -> STTProvider:
 
 def create_tts_provider(settings: Settings) -> TTSProvider:
     if settings.tts_gpu_blocked:
-        # La VRAM se reserva para el LLM: sin voice_clone.allow_gpu, la voz
-        # ligera en CPU sustituye a Chatterbox CUDA en lugar de cargarlo.
+        # Sin autorización explícita, ningún clonador ocupa la GPU y se usa
+        # la voz ligera en CPU.
         LOGGER.warning(
-            "Chatterbox en CUDA requiere voice_clone.allow_gpu = true; se usa Piper en CPU."
+            "%s en CUDA requiere voice_clone.allow_gpu = true; se usa Piper en CPU.",
+            settings.tts_provider,
         )
         return PiperTTSProvider(settings)
     if settings.tts_provider == "piper":
         return PiperTTSProvider(settings)
     if settings.tts_provider == "chatterbox":
         return ChatterboxTTSProvider(settings)
+    if settings.tts_provider == "xtts":
+        return XTTSTTSProvider(settings)
     raise AudioError(
         "unsupported_provider",
         f"Proveedor TTS no soportado: {settings.tts_provider}",

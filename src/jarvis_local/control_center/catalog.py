@@ -57,9 +57,11 @@ def build_tool_catalog(
     config = root / "config" / "jarvis.toml"
     core_python = root / ".venv" / "Scripts" / "python.exe"
     clone_python = root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe"
+    xtts_python = root / ".venv-xtts" / "Scripts" / "python.exe"
     voice_reference = root / "data" / "voices" / "user" / "reference.wav"
     voice_consent = root / "data" / "voices" / "user" / "consent.json"
     clone_model = root / "models" / "chatterbox-es-latam" / "t3_es_mx_latam.safetensors"
+    xtts_model = root / "models" / "xtts-v2" / "model.pth"
     whisper_model = root / "models" / "faster-whisper-small" / "model.bin"
 
     program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
@@ -122,6 +124,13 @@ def build_tool_catalog(
             root / "models" / "piper" / "es" / "es_MX" / "ald" / "medium" / "es_MX-ald-medium.onnx"
         )
         tts_requirements = (Requirement(piper_voice, "Voz Piper local"),)
+    elif voice_tts_provider == "xtts":
+        tts_requirements = (
+            Requirement(xtts_python, "Entorno aislado XTTS-v2"),
+            Requirement(xtts_model, "Modelo XTTS-v2"),
+            Requirement(voice_reference, "Muestra de voz autorizada"),
+            Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
+        )
     else:
         tts_requirements = (
             Requirement(clone_python, "Entorno aislado Chatterbox"),
@@ -226,7 +235,7 @@ def build_tool_catalog(
             name="Preparar clonación de voz",
             description="Instala o verifica Chatterbox LatAm en un entorno aislado.",
             category="Mantenimiento",
-            script_name="Setup-VoiceClone.ps1",
+            script_name="Setup-XTTS.ps1",
             source="JarvisLocal - Preparar clonación de voz.lnk",
             requirements=(),
             groups=("core_runtime", "audio", "maintenance"),

@@ -628,7 +628,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         await embeddings.aclose()
         return 0 if result.ok else 1
 
-    # Si el TTS usa CUDA (solo con voice_clone.allow_gpu), Chatterbox debe
+    # Si el TTS usa CUDA (solo con voice_clone.allow_gpu), el clonador debe
     # reservar su memoria antes de que llama-server calcule el offload
     # automático. El orden inverso deja poca memoria contigua y provoca
     # paginación WDDM, multiplicando la latencia TTS.

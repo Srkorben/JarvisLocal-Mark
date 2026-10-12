@@ -74,7 +74,7 @@ def _file_size(path: Path | None) -> int:
 
 
 def _tts_report(settings: Settings, load_seconds: float) -> dict:
-    if settings.tts_provider == "chatterbox":
+    if settings.tts_provider in {"chatterbox", "xtts"}:
         return {
             "provider": settings.tts_provider,
             "model_path": str(settings.tts_clone_model_path),

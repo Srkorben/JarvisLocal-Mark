@@ -26,7 +26,11 @@ from jarvis_local.audio.enrollment import (
     create_own_voice_consent,
     validate_own_voice_consent,
 )
-from jarvis_local.audio.providers import ChatterboxTTSProvider, create_tts_provider
+from jarvis_local.audio.providers import (
+    ChatterboxTTSProvider,
+    XTTSTTSProvider,
+    create_tts_provider,
+)
 from jarvis_local.budgets import ActionBudget
 from jarvis_local.cancellation import CancellationController, CancellationToken, OperationCancelled
 from jarvis_local.database import Database
@@ -562,6 +566,64 @@ class ChatterboxProviderTests(IsolatedAsyncioTestCase):
                 await asyncio.wait_for(task, timeout=2)
             self.assertIsNone(provider._process)
             await provider.aclose()
+
+
+class XTTSProviderTests(IsolatedAsyncioTestCase):
+    async def test_factory_selects_xtts_without_changing_callers(self) -> None:
+        with TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory), tts_provider="xtts")
+            self.assertIsInstance(create_tts_provider(settings), XTTSTTSProvider)
+
+    async def test_worker_command_uses_isolated_environment_and_local_model(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / ".venv-xtts" / "Scripts" / "python.exe"
+            model = root / "models" / "xtts-v2"
+            reference = root / "reference.wav"
+            settings = make_settings(
+                root,
+                tts_provider="xtts",
+                tts_clone_python=python,
+                tts_clone_model_path=model,
+                tts_clone_reference_path=reference,
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_device="cuda",
+            )
+            command = XTTSTTSProvider(settings)._command()
+            self.assertEqual(Path(command[0]), python)
+            self.assertIn("jarvis_local.xtts_worker", command)
+            self.assertEqual(Path(command[command.index("--model-dir") + 1]), model)
+            self.assertEqual(Path(command[command.index("--reference") + 1]), reference)
+            self.assertEqual(command[command.index("--device") + 1], "cuda")
+
+    async def test_validation_fails_closed_when_an_xtts_artifact_is_missing(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            python.touch()
+            for name in ("config.json", "dvae.pth", "model.pth", "vocab.json"):
+                (root / name).touch()
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"authorized voice fixture")
+            create_authorized_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=20.0,
+                source_extension=".wav",
+            )
+            settings = make_settings(
+                root,
+                tts_provider="xtts",
+                tts_clone_python=python,
+                tts_clone_model_path=root,
+                tts_clone_reference_path=reference,
+                tts_clone_consent_path=consent,
+            )
+            with self.assertRaises(AudioError) as caught:
+                XTTSTTSProvider(settings)._validate_files()
+            self.assertEqual(caught.exception.code, "clone_model_missing")
+            self.assertIn("speakers_xtts.pth", str(caught.exception))
 
 
 class VoiceSessionTests(IsolatedAsyncioTestCase):

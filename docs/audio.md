@@ -63,11 +63,40 @@ La inferencia se ejecuta en un thread. La cancelación se comprueba antes, entre
 segmentos y después, pero CTranslate2 no garantiza interrumpir inmediatamente un
 kernel CPU ya iniciado. La transcripción ambigua o silenciosa no llega al núcleo.
 
-## Voz propia: Chatterbox LatAm
+## Voz activa: XTTS-v2
 
-Por preferencia explícita del usuario, Piper no es la voz activa. Se conserva como
-backend técnico de respaldo, pero `config/jarvis.toml` selecciona `chatterbox` y
-falla cerrado si la muestra o el consentimiento no son válidos.
+Después de comparar audiblemente Piper, Chatterbox LatAm y XTTS-v2 con la misma
+referencia autorizada, el propietario aceptó XTTS-v2 por una mejora clara de
+semejanza y naturalidad. `config/jarvis.toml` selecciona `xtts`; los otros dos
+motores permanecen disponibles como fallbacks.
+
+XTTS vive en `.venv-xtts`, usa `coqui-tts 0.27.5`, PyTorch 2.9.1+cu128 y el
+modelo oficial `coqui/XTTS-v2` fijado en la revisión
+`6c2b0d75eae4b7047358e3b6bd9325f857d43f77` (~2,09 GB). La licencia del modelo
+es Coqui Public Model License. El worker local no abre puertos y conserva en
+memoria los latentes de la referencia. Cancelar termina el proceso.
+
+PyTorch 2.9 deriva la lectura de audio a TorchCodec, que en Windows requiere una
+distribución FFmpeg compartida. El worker no instala otro FFmpeg: lee únicamente
+el WAV PCM ya validado mediante `soundfile` y entrega un tensor local a XTTS.
+
+Medición integrada del 12 de octubre de 2026:
+
+- carga, condicionamiento y priming CUDA: 110,891 s;
+- síntesis posterior: 2,281 s para 5,387 s de audio a 24 kHz;
+- reproducción WASAPI: 5,672 s;
+- prueba humana comparativa: mejora clara frente a Chatterbox.
+
+Instalación reproducible:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-XTTS.ps1
+```
+
+## Backend anterior: Chatterbox LatAm
+
+Piper y Chatterbox ya no son la voz activa. Chatterbox se conserva como backend
+recuperable y sigue fallando cerrado si la muestra o el consentimiento no son válidos.
 
 Chatterbox se aisló en `.venv-chatterbox-cuda`: su stack fija NumPy 1.x y usa
 PyTorch 2.9.1+cu128, que incluye `sm_120` para la RTX 5060. No contamina el núcleo.
@@ -176,12 +205,14 @@ La aceleración posterior de la voz clonada se registra por separado en
 - audio de turnos no se persiste;
 - auditoría conserva estado, latencias, idioma/probabilidades y resultado, no la
   transcripción ni PCM;
-- Chatterbox arranca con `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, telemetría
+- los workers de clonación arrancan con `HF_HUB_OFFLINE=1`,
+  `TRANSFORMERS_OFFLINE=1`, telemetría
   deshabilitada y todos los recursos previamente descargados;
 - no hay eco acústico avanzado, full-duplex ni barge-in natural;
 - durante una llamada, el micrófono solo se abre en la fase de escucha y se
   libera al silenciar, colgar, cerrar la aplicación o detener el runtime;
 - una voz clonada puede sonar similar, pero no constituye identidad, autenticación
   ni autorización;
-- falta escuchar y evaluar semejanza/naturalidad antes de declarar aceptada la Fase 2.
+- XTTS-v2 recibió aceptación comparativa inicial; sigue pendiente validar varios
+  turnos completos dentro de una llamada real.
 

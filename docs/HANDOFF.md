@@ -1,5 +1,20 @@
 # Mark / JarvisLocal: documento de transferencia
 
+## Actualización local: XTTS-v2 (12 de octubre de 2026)
+
+- Chatterbox fue rechazado tras dos referencias por sonido robotizado e interferencias.
+- El usuario aportó una referencia autorizada de 20,01 s y aceptó una comparación
+  audible de XTTS-v2 como mejora clara.
+- `xtts` es ahora un `TTSProvider` seleccionable y el proveedor efectivo local.
+- Worker aislado JSONL: modelo, latentes de hablante y priming CUDA se cargan una
+  vez; cancelación termina el proceso; no abre puertos.
+- Modelo `coqui/XTTS-v2` fijado en
+  `6c2b0d75eae4b7047358e3b6bd9325f857d43f77`; entorno `.venv-xtts`.
+- Medida real: 110,891 s de arranque y 2,281 s para generar 5,387 s de audio ya caliente.
+- Suite posterior: 178 pruebas + 9 subpruebas aprobadas.
+- Pendiente: conversación humana multivuelta desde WPF y medir el efecto conjunto
+  XTTS+Qwen sobre tokens/s. No confundir clonación zero-shot con entrenamiento.
+
 Última actualización: 11 de octubre de 2026 (sesión 3 de Claude Code).
 Este documento permite continuar sin depender de las conversaciones anteriores.
 

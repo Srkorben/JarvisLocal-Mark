@@ -86,11 +86,11 @@ El script crea `.venv`, instala el paquete y dependencias de desarrollo, ejecuta
 las pruebas y termina con diagnóstico. Si encuentra un entorno de otra versión de
 Python, lo preserva como `.venv.incompatible-<fecha>`.
 
-La clonación usa deliberadamente otro entorno. Ya está instalado en esta máquina;
-para recrearlo descarga un único modelo LatAm fijado (~3,21 GB):
+La voz activa usa deliberadamente otro entorno. Ya está instalada en esta máquina;
+para recrearla descarga XTTS-v2 fijado por revisión (~2,09 GB):
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-XTTS.ps1
 ```
 
 ## Uso y verificación
@@ -106,8 +106,8 @@ Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → 
 audio**. Admite WAV, MP3, M4A, FLAC, OGG, OPUS, AAC o WMA de 15–30 segundos y
 24 MiB como máximo. Debes confirmar que eres titular de la voz o que cuentas con
 autorización del titular. El proceso permanece en `127.0.0.1`; normaliza el audio
-a PCM mono de 24 kHz y respalda la referencia anterior. Chatterbox usa la muestra
-como referencia zero-shot: no se reentrenan los pesos del modelo.
+a PCM mono de 24 kHz y respalda la referencia anterior. XTTS usa la muestra como
+referencia zero-shot: no se reentrenan los pesos del modelo.
 
 El centro también puede iniciarse, consultarse o detenerse desde consola para
 diagnóstico o recuperación:
@@ -173,14 +173,14 @@ En llamada, **Silenciar** libera la captura hasta reactivarla; **Interrumpir**
 detiene el turno actual y **Colgar** cierra la sesión y el micrófono. En modo
 manual, mantén pulsado el micrófono y suelta para enviar. `Ctrl+C` solo cierra la
 CLI de diagnóstico. La voz transcrita nunca confirma
-acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
+acciones sensibles. XTTS-v2 está seleccionado y falla cerrado si faltan la
 muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
 
-La voz clonada usa CUDA en la RTX 5060. Mark carga y prepara Chatterbox antes de
+La voz clonada usa CUDA en la RTX 5060. Mark carga y prepara XTTS-v2 antes de
 `llama-server`, de modo que el offload adaptativo del LLM solo utiliza la VRAM
-restante. La carga inicial observada fue 21,74 s; una respuesta de 4,4 s de audio
-se sintetizó en 5,68 s con ambos modelos residentes. El entorno CPU anterior se
-conserva como fallback, pero no es la selección activa.
+restante. La primera carga integrada observada fue 110,9 s; después del
+precalentamiento, una respuesta de 5,39 s de audio se sintetizó en 2,28 s. Piper
+y Chatterbox se conservan como fallbacks, pero no son la selección activa.
 
 ## Configuración de modelos
 

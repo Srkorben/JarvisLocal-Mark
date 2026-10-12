@@ -132,7 +132,19 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 - el metadato upstream de Chatterbox 0.1.7 aún fija PyTorch 2.6; se instala el
   commit fijado con `--no-deps` y dependencias explícitas para evitar degradar al
   wheel sin soporte Blackwell;
-- worker cargado offline; semejanza pendiente de la muestra del usuario.
+- worker cargado offline; descartado como voz activa tras la comparación humana.
+
+### XTTS-v2 para la voz activa
+
+- entorno aislado `.venv-xtts`;
+- `coqui-tts==0.27.5`, código MPL-2.0;
+- modelo `coqui/XTTS-v2`, revisión
+  `6c2b0d75eae4b7047358e3b6bd9325f857d43f77`, Coqui Public Model License;
+- tamaño publicado del modelo: ~2,09 GB;
+- PyTorch/torchaudio 2.9.1+cu128, Transformers 4.57.6 y TorchCodec 0.9.1;
+- Transformers queda fijado en 4.57.6 porque 5.19 retiró una API usada por XTTS;
+- lectura del WAV validado mediante `soundfile` para evitar exigir FFmpeg shared;
+- modelo, condicionamiento y precalentamiento residen solo durante la sesión de voz.
 
 ### Normalización de referencias importadas
 
@@ -143,7 +155,8 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 
 Fuentes primarias: [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
 [Piper OHF](https://github.com/OHF-Voice/piper1-gpl),
-[Chatterbox](https://github.com/resemble-ai/chatterbox) y
+[Chatterbox](https://github.com/resemble-ai/chatterbox),
+[XTTS-v2](https://huggingface.co/coqui/XTTS-v2) y
 [modelo LatAm](https://huggingface.co/ResembleAI/Chatterbox-Multilingual-es-mx-latam).
 
 ## Aplicación de escritorio

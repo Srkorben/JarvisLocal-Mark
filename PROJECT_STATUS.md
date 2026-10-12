@@ -81,6 +81,10 @@ no está instalada en la carpeta principal.
 - mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
 - Piper validado como fallback; su voz fue rechazada por el usuario;
 - Chatterbox LatAm instalado en proceso/venv separado, CUDA y offline;
+- XTTS-v2 integrado como proveedor activo en proceso aislado, CUDA y offline;
+- referencia de 20,01 s aceptada comparativamente por el usuario; Chatterbox fue
+  descartado como voz activa por sonido robotizado e interferencias;
+- carga XTTS integrada 110,891 s; síntesis caliente 2,281 s para 5,387 s de audio;
 - reserva de VRAM en orden voz→LLM y priming CUDA antes de declarar estado listo;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
 - importación desde UI de audio autorizado de 15–30 s, ocho formatos, respaldo y auditoría;
@@ -88,8 +92,7 @@ no está instalada en la carpeta principal.
 - cancelación durante captura, STT, LLM, playback y worker de clonación;
 - auditoría de metadatos/latencia sin almacenar audio ni transcripción.
 
-La aceptación no se cierra todavía: la muestra ya fue grabada y la síntesis es
-funcional, pero el usuario debe evaluar semejanza y naturalidad. La lógica de
+La aceptación comparativa del timbre se completó con XTTS-v2. La lógica de
 llamada y sus estados está probada automáticamente; la prueba acústica humana de
 varios turnos consecutivos sigue pendiente. No hay wake word, full-duplex,
 cancelación de eco, bandeja, UIA, Playwright ni visión.

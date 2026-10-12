@@ -1,6 +1,7 @@
 .venv/
 .venv-chatterbox/
 .venv-chatterbox-cuda/
+.venv-xtts/
 .venv.incompatible-*/
 __pycache__/
 *.py[cod]

@@ -150,6 +150,17 @@ class CatalogTests(TestCase):
             self.assertFalse(chat.visible_console)
             self.assertIn("core_runtime", chat.exclusive_groups)
 
+    def test_xtts_voice_requires_only_xtts_clone_assets(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            catalog = build_tool_catalog(root, voice_tts_provider="xtts")
+            missing = catalog["voice"].missing_requirements()
+            self.assertIn("Entorno aislado XTTS-v2", missing)
+            self.assertIn("Modelo XTTS-v2", missing)
+            self.assertIn("Muestra de voz autorizada", missing)
+            self.assertNotIn("Entorno aislado Chatterbox", missing)
+            self.assertNotIn("Modelo Chatterbox LatAm", missing)
+
 
 class ProcessManagerTests(TestCase):
     def test_confirmation_duplicate_conflict_and_stop(self) -> None:
