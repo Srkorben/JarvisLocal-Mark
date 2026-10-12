@@ -48,12 +48,14 @@ excluded_path_parts = [".git", ".venv*", "*.egg-info", ".pytest_cache", "node_mo
 [audio]
 input_device = "wasapi_default"
 output_device = "wasapi_default"
-ptt_hotkey = "ctrl+alt+m"
-cancel_hotkey = "ctrl+alt+pause"
 sample_rate = 16000
 min_record_seconds = 0.25
 max_record_seconds = 30.0
 min_rms = 0.003
+call_speech_rms = 0.008
+call_voice_start_seconds = 0.12
+call_end_silence_seconds = 0.8
+call_rollover_seconds = 8.0
 
 [stt]
 provider = "faster_whisper"

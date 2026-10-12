@@ -18,7 +18,7 @@ from jarvis_local.audio import (
     TranscriptionResult,
     VoiceSessionManager,
     VoiceState,
-    WindowsKeyChord,
+    run_panel_voice_loop,
 )
 from jarvis_local.audio.providers import _safe_transcript_text
 from jarvis_local.audio.enrollment import (
@@ -192,17 +192,240 @@ def audio_buffer(*, rms: float = 0.2, duration: float = 1.0) -> AudioBuffer:
     )
 
 
-class HotkeyTests(TestCase):
-    def test_parses_only_configured_keys(self) -> None:
-        chord = WindowsKeyChord.parse("ctrl+alt+j")
-        self.assertEqual(chord.virtual_keys, (0x11, 0x12, ord("J")))
-        with self.assertRaises(ValueError):
-            WindowsKeyChord.parse("ctrl+tecla-desconocida")
-
+class TranscriptSafetyTests(TestCase):
     def test_transcript_is_valid_utf8_before_reaching_the_model(self) -> None:
         value = _safe_transcript_text("hola\udced\x00 mundo")
         self.assertEqual(value, "hola? mundo")
         self.assertEqual(value.encode("utf-8").decode("utf-8"), value)
+
+
+class _PanelLoopManager:
+    def __init__(self) -> None:
+        self.state = VoiceState.IDLE
+        self.recorder = type(
+            "Recorder",
+            (),
+            {
+                "elapsed_seconds": 0.0,
+                "recent_rms": 0.0,
+                "retain_recent": lambda self, seconds: None,
+            },
+        )()
+        self.max_record_seconds = 30.0
+        self.min_rms = 0.003
+        self.actions: list[str] = []
+
+    async def start_recording(self, *, interface="push_to_talk") -> bool:
+        self.actions.append(f"start:{interface}")
+        self.state = VoiceState.RECORDING
+        return True
+
+    async def finish_recording(self) -> None:
+        self.actions.append("finish")
+        self.state = VoiceState.IDLE
+
+    async def cancel_active(self, reason: str) -> None:
+        self.actions.append("cancel")
+        self.state = VoiceState.IDLE
+
+    async def refresh_recording(self) -> bool:
+        self.actions.append("refresh")
+        return True
+
+    async def discard_recording(self, reason: str) -> bool:
+        if self.state is not VoiceState.RECORDING:
+            return False
+        self.actions.append("discard")
+        self.state = VoiceState.IDLE
+        return True
+
+    async def close(self) -> None:
+        self.actions.append("close")
+
+
+class PanelVoiceLoopTests(IsolatedAsyncioTestCase):
+    async def test_ui_press_and_release_drive_one_recording(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_recording"})
+        await commands.put({"action": "finish_recording"})
+        for _ in range(100):
+            if manager.actions[:2] == ["start:push_to_talk", "finish"]:
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(
+            manager.actions, ["start:push_to_talk", "finish", "close"]
+        )
+
+    async def test_call_detects_voice_silence_restarts_and_hangs_up(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                speech_rms=0.01,
+                voice_start_seconds=0.003,
+                end_silence_seconds=0.005,
+                listen_rollover_seconds=5,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.recent_rms = 0.03
+        for _ in range(100):
+            if any(item[0] == "voice_detected" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.recent_rms = 0.0
+        for _ in range(100):
+            if "finish" in manager.actions:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "end_call"})
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("listening", "call", True, False), states)
+        self.assertIn(("voice_detected", "call", True, False), states)
+        self.assertIn(("ending", "call", False, False), states)
+        self.assertIn("finish", manager.actions)
+        self.assertEqual(manager.actions[-1], "close")
+
+    async def test_call_mute_releases_capture_and_unmute_reopens_it(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "mute"})
+        for _ in range(100):
+            if any(item[0] == "muted" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        self.assertEqual(manager.state, VoiceState.IDLE)
+        self.assertIn("discard", manager.actions)
+        await commands.put({"action": "unmute"})
+        for _ in range(100):
+            if manager.actions.count("start:continuous_call") >= 2:
+                break
+            await asyncio.sleep(0.002)
+        self.assertEqual(manager.state, VoiceState.RECORDING)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("muted", "call", True, True), states)
+        self.assertGreaterEqual(manager.actions.count("start:continuous_call"), 2)
+
+    async def test_interrupt_cancels_current_turn_and_call_resumes_listening(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "cancel"})
+        for _ in range(100):
+            if (
+                "cancel" in manager.actions
+                and manager.actions.count("start:continuous_call") >= 2
+            ):
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn("cancel", manager.actions)
+        self.assertGreaterEqual(manager.actions.count("start:continuous_call"), 2)
+        self.assertEqual(manager.actions[-1], "close")
+
+    async def test_rollover_never_discards_a_voice_start_candidate(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                speech_rms=0.01,
+                voice_start_seconds=0.004,
+                listen_rollover_seconds=2.0,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.elapsed_seconds = 3.0
+        manager.recorder.recent_rms = 0.03
+        for _ in range(100):
+            if any(item[0] == "voice_detected" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("voice_detected", "call", True, False), states)
+        self.assertNotIn("refresh", manager.actions)
 
 
 class VoiceCloneConsentTests(TestCase):

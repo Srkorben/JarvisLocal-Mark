@@ -72,6 +72,9 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       color:#d8f9ff; text-shadow:0 0 18px #64e6ff; }}
     #stateHint {{ margin-top:9px; color:#6e929d; font-size:11px; letter-spacing:.08em; line-height:1.5; }}
     body[data-state="recording"] .core-glow {{ transform:scale(1.14); opacity:1; filter:hue-rotate(130deg); }}
+    body[data-state="listening"] .core-glow {{ opacity:.9; animation:breathe 1.8s ease-in-out infinite alternate; }}
+    body[data-state="voice_detected"] .core-glow {{ transform:scale(1.16); opacity:1; filter:hue-rotate(125deg); }}
+    body[data-state="muted"] .core-glow {{ opacity:.28; filter:grayscale(.75); }}
     body[data-state="speaking"] .core-glow {{ opacity:1; animation:breathe .7s ease-in-out infinite alternate; }}
     body[data-state="processing"] .r2 {{ animation-duration:2s; }}
     body[data-state="error"] .ring {{ border-color:#ff686877; }}
@@ -87,6 +90,32 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     kbd {{ color:#a8d5de; border:1px solid #204753; border-bottom-color:#317083; border-radius:3px;
       padding:2px 6px; background:#071116; font-family:inherit; }}
     .controls {{ display:flex; align-items:center; gap:10px; }}
+    .voice-panel {{ display:grid; justify-items:center; gap:8px; }}
+    .mode-picker {{ display:flex; padding:3px; border:1px solid #163e4a; border-radius:20px; background:#030b0f; }}
+    .mode-picker button {{ border:0; border-radius:16px; padding:6px 11px; background:transparent; color:#5e7d87;
+      cursor:pointer; font-size:9px; letter-spacing:.09em; text-transform:uppercase; }}
+    .mode-picker button.active {{ background:#0b2b35; color:#d9f9ff; box-shadow:0 0 16px #35d6ee22; }}
+    .mode-picker button:disabled {{ opacity:.45; cursor:not-allowed; }}
+    .voice-actions {{ display:flex; align-items:center; justify-content:center; gap:8px; min-height:58px; }}
+    .voice-actions [hidden] {{ display:none!important; }}
+    .call-control,.mute-control,.interrupt-control {{ border:1px solid #23849c; background:#06232cdd; color:#cbf7ff;
+      min-height:48px; padding:10px 15px; border-radius:24px; cursor:pointer; text-transform:uppercase;
+      font-size:10px; letter-spacing:.1em; }}
+    .call-control:hover,.mute-control:hover,.interrupt-control:hover {{ border-color:#61e7ff; color:white; }}
+    .hangup {{ border-color:#7b343a; background:#351116; color:#ffc3c7; }}
+    .interrupt-control {{ border-color:#81662d; background:#2a210c; color:#f4dc9a; }}
+    .call-control:disabled,.mute-control:disabled,.interrupt-control:disabled {{ opacity:.35; cursor:not-allowed; }}
+    .mic-control {{ min-width:178px; min-height:58px; display:flex; align-items:center; justify-content:center;
+      gap:10px; border:1px solid #23849c; background:#06232cdd; color:#cbf7ff; padding:10px 16px;
+      border-radius:30px; cursor:pointer; text-transform:uppercase; font-size:10px; letter-spacing:.12em;
+      user-select:none; touch-action:none; transition:.18s; }}
+    .mic-control svg {{ width:23px; height:23px; fill:none; stroke:currentColor; stroke-width:1.8;
+      stroke-linecap:round; stroke-linejoin:round; flex:none; }}
+    .mic-control:hover,.mic-control:focus-visible {{ border-color:#61e7ff; color:white;
+      box-shadow:0 0 28px #28cce533; outline:none; }}
+    .mic-control.recording {{ border-color:#ff6e6e; color:#fff; background:#3a1014;
+      box-shadow:0 0 34px #ff405044; transform:scale(.98); }}
+    .mic-control:disabled {{ opacity:.35; cursor:not-allowed; box-shadow:none; }}
     .primary,.stop {{ border:1px solid #23849c; background:#06232cdd; color:#cbf7ff; padding:12px 18px;
       border-radius:3px; cursor:pointer; text-transform:uppercase; font-size:11px; letter-spacing:.13em; }}
     .primary:hover {{ border-color:#61e7ff; box-shadow:0 0 24px #28cce52b; }}
@@ -249,7 +278,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     <aside class="telemetry" aria-label="Módulos principales">
       <button class="module-link" data-module="interface" type="button"><span>Interfaz</span><strong>Experiencia adaptativa</strong></button><div class="rule"></div>
       <button class="module-link" data-module="authority" type="button"><span>Autoridad</span><strong>Control de acciones</strong></button><div class="rule"></div>
-      <button class="module-link" data-module="audio" type="button"><span>Audio</span><strong>Pulsar para hablar</strong></button>
+      <button class="module-link" data-module="audio" type="button"><span>Audio</span><strong>Conversación local</strong></button>
     </aside>
     <section class="core-wrap" aria-live="polite">
       <div class="ticks"></div><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
@@ -267,10 +296,23 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     <div id="jarvisLine" class="line"><span class="who">Mark</span><span id="response"></span></div>
   </div>
   <footer>
-    <div class="keys">Mantén <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M</kbd> para hablar<br>
-      <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Pause</kbd> cancela el turno</div>
-    <div class="controls"><button id="voiceStart" class="primary" type="button">Iniciar voz</button>
-      <button id="voiceStop" class="stop" type="button" disabled>Detener núcleo</button></div>
+    <div class="keys">El micrófono solo se abre durante una llamada activa<br>
+      o mientras mantienes pulsado el control manual</div>
+    <div class="voice-panel">
+      <div class="mode-picker" role="group" aria-label="Modo de voz">
+        <button id="voiceModeCall" class="active" type="button">Conversación</button>
+        <button id="voiceModePtt" type="button">Pulsar para hablar</button>
+      </div>
+      <div class="voice-actions">
+        <button id="callStart" class="call-control" type="button">Iniciar llamada</button>
+        <button id="voiceMic" class="mic-control" type="button" aria-label="Mantén para hablar" aria-pressed="false" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"></path></svg>
+          <span id="voiceMicLabel">Mantén para hablar</span></button>
+        <button id="voiceMute" class="mute-control" type="button" hidden>Silenciar</button>
+        <button id="voiceCancel" class="interrupt-control" type="button" hidden>Interrumpir</button>
+        <button id="voiceHangup" class="call-control hangup" type="button" hidden>Colgar</button>
+      </div>
+    </div>
     <div class="version">{safe_version}<br>Privado por diseño</div>
   </footer>
 </div>
@@ -334,12 +376,14 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 <div id="notice" role="status"></div>
 <script nonce="{safe_nonce}">
 const csrf="{csrf}";
-const stateText={{offline:["Sistema desconectado","Escribe en el chat o inicia la voz para comenzar"],loading:["Inicializando","Cargando el núcleo local"],idle:["En espera","Escribe en el chat o usa la voz si está activa"],queued:["En cola","Preparando el núcleo local"],
-recording:["Escuchando","Suelta la combinación para enviar"],transcribing:["Interpretando voz","Transcripción local en curso"],
+const stateText={{offline:["Sistema desconectado","Escribe en el chat o inicia una llamada"],loading:["Inicializando","Cargando el núcleo local"],idle:["En espera","Inicia una llamada o usa el modo manual"],queued:["En cola","Preparando el núcleo local"],
+listening:["Escuchando","Habla con naturalidad; Mark detectará el final"],voice_detected:["Voz detectada","Escuchando hasta el final de tu intervención"],muted:["Micrófono silenciado","Reactívalo para continuar la llamada"],ending:["Finalizando llamada","Liberando el micrófono y la captura temporal"],
+recording:["Escuchando","Suelta el micrófono para enviar"],transcribing:["Interpretando voz","Transcripción local en curso"],
 processing:["Procesando","Consultando el núcleo local"],speaking:["Respondiendo","Síntesis de voz activa"],
 cancelling:["Cancelando","Interrumpiendo el turno actual"],error:["Incidencia detectada","Consulta el detalle en pantalla"]}};
 const labels={{available:"Disponible",running:"Activo",unavailable:"No disponible",error:"Error"}};
 let currentState="offline",toolsCache=[],modulesCache=[],visualQuality="auto",lastFrame=0;
+let voiceMode="call",callActive=false,callMuted=false,callStarting=false;
 try{{visualQuality=localStorage.getItem("mark.visualQuality")||"auto";}}catch(_){{}}
 if(!["auto","balanced","eco"].includes(visualQuality))visualQuality="auto";
 const $=id=>document.getElementById(id),notice=$("notice"),drawer=$("drawer"),modulePanel=$("modulePanel");
@@ -353,16 +397,16 @@ function effectiveQuality(){{if(document.hidden)return "paused";if(visualQuality
 return ["processing","transcribing","loading"].includes(currentState)?"eco":"balanced";}}
 function applyVisualQuality(){{document.body.dataset.quality=effectiveQuality();}}
 let lastPresenceRevision=-1;
-function setPresence(p){{if(typeof p.revision==="number"&&p.revision<=lastPresenceRevision)return;if(typeof p.revision==="number")lastPresenceRevision=p.revision;const before=effectiveQuality();currentState=p.state||"offline";document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
+function setPresence(p){{if(typeof p.revision==="number"&&p.revision<=lastPresenceRevision)return;if(typeof p.revision==="number")lastPresenceRevision=p.revision;const before=effectiveQuality();currentState=p.state||"offline";callActive=p.call_active===true;callMuted=p.muted===true;if(callActive){{voiceMode="call";callStarting=false;}}document.body.dataset.state=currentState;applyVisualQuality();if(before!==effectiveQuality())resize();
 const copy=stateText[currentState]||stateText.offline;$("stateTitle").textContent=copy[0];$("stateHint").textContent=p.error||copy[1];
 $("transcript").textContent=p.transcript||"";$("response").textContent=p.response||"";
-$("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));chatPresence(p);}}
+$("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").classList.toggle("visible",Boolean(p.response));chatPresence(p);updateVoiceButton();}}
 let presenceFailures=0;
 async function loadPresence(){{try{{const data=await request("/api/voice/presence");presenceFailures=0;setPresence(data.presence);}}
 catch(_){{presenceFailures++;if(presenceFailures>=8)chatDisconnected();else return;setPresence({{state:"offline"}});}}}}
 async function loadTools(){{try{{const data=await request("/api/tools");toolsCache=data.tools;renderTools();
 const voice=toolsCache.find(t=>t.id==="voice"),running=voice?.status==="running";
-$("voiceStart").disabled=!voice||running||voice.status==="unavailable";$("voiceStop").disabled=!running;chatRuntimeLabel();renderCoreControls();}}
+updateVoiceControls();chatRuntimeLabel();renderCoreControls();}}
 catch(error){{tell(error.message);}}}}
 let systemSnapshot=null,systemLoading=false;
 function metric(id,bar,value,label){{$(id).textContent=label;const progress=$(bar);progress.value=Number.isFinite(value)?Math.max(0,Math.min(100,value)):0;progress.toggleAttribute("data-unavailable",!Number.isFinite(value));}}
@@ -410,8 +454,50 @@ function setVisualQuality(value){{if(!["auto","balanced","eco"].includes(value))
 try{{localStorage.setItem("mark.visualQuality",value);}}catch(_){{}}applyVisualQuality();resize();refreshQualityButtons();}}
 async function toolAction(id,action,confirmed=false){{const data=await request(`/api/tools/${{encodeURIComponent(id)}}/${{action}}`,
 {{method:"POST",body:JSON.stringify({{confirmed}})}});await loadTools();return data.result;}}
-$("voiceStart").addEventListener("click",async()=>{{try{{await toolAction("voice","start");tell("Núcleo de voz iniciado.");}}catch(e){{tell(e.message);}}}});
-$("voiceStop").addEventListener("click",async()=>{{try{{await toolAction("voice","stop");setPresence({{state:"offline"}});tell("Núcleo de voz detenido.");}}catch(e){{tell(e.message);}}}});
+let micPointerActive=false,micStartPromise=null;
+function voiceTool(){{return toolsCache.find(t=>t.id==="voice");}}
+function updateVoiceButton(){{updateVoiceControls();}}
+function updateVoiceControls(){{const voice=voiceTool(),running=voice?.status==="running",unavailable=!voice||voice.status==="unavailable";
+const callMode=voiceMode==="call",busy=["transcribing","processing","speaking","cancelling","ending"].includes(currentState);
+$("voiceModeCall").classList.toggle("active",callMode);$("voiceModePtt").classList.toggle("active",!callMode);
+$("voiceModeCall").disabled=callActive||callStarting;$("voiceModePtt").disabled=callActive||callStarting;
+$("callStart").hidden=!callMode||callActive;$("callStart").disabled=unavailable||callStarting;
+$("callStart").textContent=callStarting||currentState==="loading"?"Preparando llamada…":"Iniciar llamada";
+$("voiceMic").hidden=callMode;$("voiceMic").disabled=unavailable||!running||currentState!=="idle";
+$("voiceMute").hidden=!callActive;$("voiceMute").textContent=callMuted?"Reactivar micrófono":"Silenciar";
+$("voiceMute").disabled=["ending","cancelling"].includes(currentState);
+$("voiceHangup").hidden=!callActive;$("voiceHangup").disabled=currentState==="ending";
+$("voiceCancel").hidden=!(["recording","voice_detected","transcribing","processing","speaking","cancelling"].includes(currentState));
+$("voiceCancel").disabled=currentState==="cancelling";
+const label=$("voiceMicLabel"),text=currentState==="recording"?"Suelta para enviar":"Mantén para hablar";
+label.textContent=text;$("voiceMic").setAttribute("aria-label",text);$("voiceMic").setAttribute("aria-pressed",String(micPointerActive||currentState==="recording"));
+$("voiceMic").classList.toggle("recording",micPointerActive||currentState==="recording");}}
+async function voiceCommand(action){{return request("/api/voice/control",{{method:"POST",body:JSON.stringify({{action}})}});}}
+async function ensureVoiceRuntime(){{const voice=voiceTool();if(!voice||voice.status==="unavailable")throw new Error("La voz local no está disponible.");
+if(voice.status!=="running")await toolAction("voice","start");}}
+async function setVoiceMode(mode){{if(callActive||callStarting||!['call','ptt'].includes(mode))return;voiceMode=mode;updateVoiceControls();
+if(mode==="ptt"){{try{{await ensureVoiceRuntime();tell("Modo manual preparado. Mantén el micrófono cuando aparezca ‘En espera’.");}}catch(error){{tell(error.message);}}}}}}
+async function startCall(){{if(callActive||callStarting)return;callStarting=true;voiceMode="call";updateVoiceControls();
+try{{await ensureVoiceRuntime();await voiceCommand("start_call");tell("Llamada iniciada. Mark comenzará a escuchar cuando termine de cargar.");}}
+catch(error){{callStarting=false;tell(error.message);updateVoiceControls();}}}}
+async function beginMicrophone(event){{if(event)event.preventDefault();const voice=voiceTool();if(voiceMode!=="ptt"||!voice||voice.status!=="running")return;
+if(currentState!=="idle"||micPointerActive)return;micPointerActive=true;updateVoiceButton();
+if(event?.pointerId!==undefined)$("voiceMic").setPointerCapture?.(event.pointerId);
+micStartPromise=voiceCommand("start_recording");try{{await micStartPromise;}}catch(error){{micPointerActive=false;tell(error.message);updateVoiceButton();}}}}
+async function endMicrophone(event){{if(event)event.preventDefault();if(!micPointerActive)return;micPointerActive=false;updateVoiceButton();
+try{{await micStartPromise;await voiceCommand("finish_recording");}}catch(error){{tell(error.message);}}finally{{micStartPromise=null;}}}}
+const mic=$("voiceMic");mic.addEventListener("pointerdown",beginMicrophone);mic.addEventListener("pointerup",endMicrophone);
+mic.addEventListener("pointercancel",endMicrophone);mic.addEventListener("contextmenu",event=>event.preventDefault());
+mic.addEventListener("click",event=>event.preventDefault());
+mic.addEventListener("keydown",event=>{{if((event.key===" "||event.key==="Enter")&&!event.repeat)beginMicrophone(event);}});
+mic.addEventListener("keyup",event=>{{if(event.key===" "||event.key==="Enter")endMicrophone(event);}});
+mic.addEventListener("lostpointercapture",endMicrophone);addEventListener("blur",endMicrophone);
+document.addEventListener("visibilitychange",()=>{{if(document.hidden)endMicrophone();}});
+$("voiceModeCall").addEventListener("click",()=>setVoiceMode("call"));$("voiceModePtt").addEventListener("click",()=>setVoiceMode("ptt"));
+$("callStart").addEventListener("click",startCall);
+$("voiceHangup").addEventListener("click",async()=>{{try{{await voiceCommand("end_call");tell("Finalizando llamada…");}}catch(error){{tell(error.message);}}}});
+$("voiceMute").addEventListener("click",async()=>{{try{{await voiceCommand(callMuted?"unmute":"mute");}}catch(error){{tell(error.message);}}}});
+$("voiceCancel").addEventListener("click",async()=>{{try{{await voiceCommand("cancel");tell("Interrupción solicitada.");}}catch(error){{tell(error.message);}}}});
 async function coreAction(id,action){{$("systemStatus").textContent="Aplicando…";try{{await toolAction(id,action);await loadSystem();}}
 catch(error){{$("systemStatus").textContent=error.message;}}}}
 $("coreTextStart").addEventListener("click",()=>coreAction("chat_runtime","start"));

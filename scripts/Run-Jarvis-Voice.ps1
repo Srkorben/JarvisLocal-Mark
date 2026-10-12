@@ -12,5 +12,5 @@ if (-not (Test-Path -LiteralPath $PythonExe)) {
 }
 
 Write-Host 'Mark Scout por voz' -ForegroundColor Cyan
-Write-Host 'Mantén Ctrl+Alt+M para hablar. Ctrl+Alt+Pause cancela el turno.'
+Write-Host 'Usa los controles de llamada o micrófono de la interfaz de Mark.'
 & $PythonExe -m jarvis_local.cli --config $ConfigPath --voice

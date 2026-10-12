@@ -11,13 +11,13 @@ from ..latency import LatencyLog, TurnTrace
 from ..models import ProjectRecord
 from ..orchestrator import Orchestrator
 from .base import AudioError, AudioPlayer, AudioRecorder, STTProvider, TTSProvider
-from .hotkey import WindowsKeyChord
 from .speech_stream import SpeechPipeline
 from .models import VoiceState, VoiceTurnMetrics, VoiceTurnResult
 
 
 StateCallback = Callable[[VoiceState], None]
 TextCallback = Callable[[str], None]
+VoiceSessionCallback = Callable[[str, str, bool, bool], None]
 
 
 _ALLOWED_TRANSITIONS: dict[VoiceState, frozenset[VoiceState]] = {
@@ -25,7 +25,7 @@ _ALLOWED_TRANSITIONS: dict[VoiceState, frozenset[VoiceState]] = {
         {VoiceState.RECORDING, VoiceState.PROCESSING, VoiceState.ERROR}
     ),
     VoiceState.RECORDING: frozenset(
-        {VoiceState.TRANSCRIBING, VoiceState.CANCELLING, VoiceState.ERROR}
+        {VoiceState.IDLE, VoiceState.TRANSCRIBING, VoiceState.CANCELLING, VoiceState.ERROR}
     ),
     VoiceState.TRANSCRIBING: frozenset(
         {VoiceState.PROCESSING, VoiceState.CANCELLING, VoiceState.ERROR, VoiceState.IDLE}
@@ -92,6 +92,7 @@ class VoiceSessionManager:
         self._turn_task: asyncio.Task[VoiceTurnResult] | None = None
         self._turn_started = 0.0
         self.last_result: VoiceTurnResult | None = None
+        self._voice_interface = "push_to_talk"
 
     @property
     def state(self) -> VoiceState:
@@ -100,7 +101,7 @@ class VoiceSessionManager:
     async def warmup(self) -> None:
         await asyncio.gather(self.stt.warmup(), self.tts.warmup())
 
-    async def start_recording(self) -> bool:
+    async def start_recording(self, *, interface: str = "push_to_talk") -> bool:
         async with self._lock:
             if self._state is not VoiceState.IDLE:
                 return False
@@ -110,6 +111,7 @@ class VoiceSessionManager:
                 self.session_id = self.database.create_session(project_id=active_project.id)
             self._token = self.cancellation.begin_turn()
             self._turn_started = time.monotonic()
+            self._voice_interface = interface
             try:
                 self.recorder.start()
                 self._transition(VoiceState.RECORDING)
@@ -119,6 +121,30 @@ class VoiceSessionManager:
                 self._audit("error", error=exc)
                 self._transition(VoiceState.IDLE)
                 raise
+
+    async def refresh_recording(self) -> bool:
+        """Renueva el búfer de escucha continua sin cerrar la sesión de llamada."""
+
+        async with self._lock:
+            if self._state is not VoiceState.RECORDING:
+                return False
+            self.recorder.abort()
+            self.recorder.start()
+            self._turn_started = time.monotonic()
+            return True
+
+    async def discard_recording(self, reason: str) -> bool:
+        """Cierra una escucha sin crear un turno ni persistir un evento de voz."""
+
+        async with self._lock:
+            if self._state is not VoiceState.RECORDING:
+                return False
+            self.recorder.abort()
+            if self._token is not None:
+                self._token.cancel(reason)
+            self.cancellation.cancel_current(reason)
+            self._transition(VoiceState.IDLE)
+            return True
 
     async def finish_recording(self) -> asyncio.Task[VoiceTurnResult] | None:
         async with self._lock:
@@ -143,7 +169,7 @@ class VoiceSessionManager:
     async def submit_text(
         self, text: str, *, speak: bool = True, queued_seconds: float | None = None
     ) -> asyncio.Task[VoiceTurnResult] | None:
-        """Procesa texto de la UI con la misma sesión, autoridad y voz del PTT."""
+        """Procesa texto de la UI con la misma sesión, autoridad y voz local."""
 
         normalized = " ".join(text.split())
         if not normalized or len(normalized) > 4000:
@@ -214,7 +240,7 @@ class VoiceSessionManager:
         await self.tts.aclose()
 
     async def _run_turn(self, audio, pipeline_started: float) -> VoiceTurnResult:
-        trace = TurnTrace(interface="push_to_talk")
+        trace = TurnTrace(interface=self._voice_interface)
         trace.set(captured_audio_seconds=round(audio.duration_seconds, 3))
         try:
             return await self._run_voice_turn(audio, pipeline_started, trace)
@@ -272,7 +298,12 @@ class VoiceSessionManager:
                     metrics=metrics,
                 )
                 self.last_result = result
-                self._audit("success", metrics=metrics, transcription=transcription)
+                self._audit(
+                    "success",
+                    metrics=metrics,
+                    transcription=transcription,
+                    interface=self._voice_interface,
+                )
                 self._transition(VoiceState.IDLE)
                 return result
         except OperationCancelled as exc:
@@ -281,7 +312,13 @@ class VoiceSessionManager:
                 outcome="cancelled", error=str(exc), metrics=metrics
             )
             self.last_result = result
-            self._audit("cancelled", cancelled=True, metrics=metrics, error=exc)
+            self._audit(
+                "cancelled",
+                cancelled=True,
+                metrics=metrics,
+                error=exc,
+                interface=self._voice_interface,
+            )
             if self._state is not VoiceState.CANCELLING:
                 self._transition(VoiceState.CANCELLING)
             self._transition(VoiceState.IDLE)
@@ -289,10 +326,14 @@ class VoiceSessionManager:
         except TimeoutError as exc:
             token.cancel("El turno de voz excedió su tiempo máximo.")
             self.player.stop()
-            return await self._finish_error(exc, metrics, "timeout")
+            return await self._finish_error(
+                exc, metrics, "timeout", interface=self._voice_interface
+            )
         except Exception as exc:
             self.player.stop()
-            return await self._finish_error(exc, metrics, "error")
+            return await self._finish_error(
+                exc, metrics, "error", interface=self._voice_interface
+            )
         finally:
             self._turn_task = None
 
@@ -458,7 +499,7 @@ class VoiceSessionManager:
         metrics.total_seconds = time.monotonic() - self._turn_started
         result = VoiceTurnResult(outcome=outcome, error=error, metrics=metrics)
         self.last_result = result
-        self._audit(outcome, metrics=metrics)
+        self._audit(outcome, metrics=metrics, interface=self._voice_interface)
         self._transition(VoiceState.IDLE)
         return result
 
@@ -529,30 +570,145 @@ class VoiceSessionManager:
 _PANEL_CANCEL_REASON = "Cancelado desde el panel."
 
 
-async def run_push_to_talk_loop(
+async def run_panel_voice_loop(
     manager: VoiceSessionManager,
     *,
-    ptt: WindowsKeyChord,
-    cancel: WindowsKeyChord,
+    voice_command_source: Callable[[], Awaitable[dict | None]],
     text_request_source: Callable[[], Awaitable[dict | None]] | None = None,
+    on_session_state: VoiceSessionCallback | None = None,
+    speech_rms: float = 0.008,
+    voice_start_seconds: float = 0.12,
+    end_silence_seconds: float = 0.8,
+    listen_rollover_seconds: float = 8.0,
     poll_seconds: float = 0.02,
 ) -> None:
-    ptt_was_pressed = False
-    cancel_was_pressed = False
+    """Atiende llamada semidúplex automática y PTT desde el panel local."""
+
     text_request_task: asyncio.Task[dict | None] | None = None
+    voice_command_task: asyncio.Task[dict | None] | None = None
     pending_text: dict | None = None
+    call_active = False
+    muted = False
+    voice_detected = False
+    voice_candidate_at: float | None = None
+    silence_at: float | None = None
+    last_session_snapshot: tuple[str, str, bool, bool] | None = None
+    last_manager_state = manager.state
+
+    def publish(state: str, mode: str = "call", *, force: bool = False) -> None:
+        nonlocal last_session_snapshot
+        snapshot = (state, mode, call_active, muted)
+        if snapshot == last_session_snapshot and not force:
+            return
+        last_session_snapshot = snapshot
+        if on_session_state is not None:
+            on_session_state(state, mode, call_active, muted)
+
+    def reset_detector() -> None:
+        nonlocal voice_detected, voice_candidate_at, silence_at
+        voice_detected = False
+        voice_candidate_at = None
+        silence_at = None
+
+    async def begin_listening() -> None:
+        if not call_active or muted or manager.state is not VoiceState.IDLE:
+            return
+        if await manager.start_recording(interface="continuous_call"):
+            reset_detector()
+            publish("listening")
+
     try:
         while True:
-            ptt_pressed = ptt.is_pressed()
-            cancel_pressed = cancel.is_pressed()
-            if cancel_pressed and not cancel_was_pressed:
-                await manager.cancel_active("Hotkey de emergencia de voz.")
-            if ptt_pressed and not ptt_was_pressed:
-                await manager.start_recording()
-            if not ptt_pressed and ptt_was_pressed and manager.state is VoiceState.RECORDING:
-                await manager.finish_recording()
-            if (
-                manager.state is VoiceState.RECORDING
+            manager_state_changed = manager.state is not last_manager_state
+            last_manager_state = manager.state
+            if voice_command_task is None:
+                voice_command_task = asyncio.create_task(voice_command_source())
+            if voice_command_task.done():
+                try:
+                    command = voice_command_task.result()
+                except Exception:
+                    command = None
+                voice_command_task = None
+                action = command.get("action") if isinstance(command, dict) else None
+                if action == "start_call":
+                    call_active = True
+                    muted = False
+                    publish("idle")
+                    await begin_listening()
+                elif action == "end_call":
+                    call_active = False
+                    muted = False
+                    publish("ending")
+                    if not await manager.discard_recording(
+                        "Llamada finalizada desde la interfaz."
+                    ):
+                        await manager.cancel_active("Llamada finalizada desde la interfaz.")
+                    reset_detector()
+                    publish("idle")
+                elif action == "mute" and call_active:
+                    muted = True
+                    if not await manager.discard_recording(
+                        "Micrófono silenciado desde la interfaz."
+                    ):
+                        await manager.cancel_active("Micrófono silenciado desde la interfaz.")
+                    reset_detector()
+                    publish("muted")
+                elif action == "unmute" and call_active:
+                    muted = False
+                    publish("idle")
+                    await begin_listening()
+                elif (
+                    action == "start_recording"
+                    and not call_active
+                    and manager.state is VoiceState.IDLE
+                ):
+                    await manager.start_recording(interface="push_to_talk")
+                    publish("recording", "ptt")
+                elif action == "finish_recording" and manager.state is VoiceState.RECORDING:
+                    await manager.finish_recording()
+                elif action == "cancel":
+                    await manager.cancel_active(_PANEL_CANCEL_REASON)
+                    reset_detector()
+                    publish("muted" if call_active and muted else "idle")
+            if call_active and not muted:
+                await begin_listening()
+                if manager.state is VoiceState.RECORDING:
+                    now = time.monotonic()
+                    level = manager.recorder.recent_rms
+                    if not voice_detected:
+                        if level >= speech_rms:
+                            voice_candidate_at = voice_candidate_at or now
+                            if now - voice_candidate_at >= voice_start_seconds:
+                                voice_detected = True
+                                manager.recorder.retain_recent(0.5)
+                                publish("voice_detected")
+                        else:
+                            voice_candidate_at = None
+                        if (
+                            not voice_detected
+                            and voice_candidate_at is None
+                            and manager.recorder.elapsed_seconds >= listen_rollover_seconds
+                        ):
+                            await manager.refresh_recording()
+                            reset_detector()
+                            publish("listening")
+                    else:
+                        end_threshold = max(manager.min_rms, speech_rms * 0.65)
+                        if level < end_threshold:
+                            silence_at = silence_at or now
+                            if now - silence_at >= end_silence_seconds:
+                                await manager.finish_recording()
+                                reset_detector()
+                        else:
+                            silence_at = None
+                        if manager.recorder.elapsed_seconds >= manager.max_record_seconds:
+                            await manager.finish_recording()
+                            reset_detector()
+            elif call_active and muted:
+                publish("muted", force=manager_state_changed)
+            elif (
+                not call_active
+                and manager.state is VoiceState.RECORDING
                 and manager.recorder.elapsed_seconds >= manager.max_record_seconds
             ):
                 await manager.finish_recording()
@@ -571,6 +727,16 @@ async def run_push_to_talk_loop(
             if pending_text is not None and pending_text.get("cancel"):
                 pending_text = None
                 await manager.cancel_active(_PANEL_CANCEL_REASON)
+            if (
+                pending_text is not None
+                and call_active
+                and manager.state is VoiceState.RECORDING
+                and not voice_detected
+            ):
+                await manager.discard_recording(
+                    "Escucha pausada temporalmente por mensaje escrito."
+                )
+                reset_detector()
             if pending_text is not None and manager.state is VoiceState.IDLE:
                 accepted = await manager.submit_text(
                     str(pending_text["text"]),
@@ -579,10 +745,11 @@ async def run_push_to_talk_loop(
                 )
                 if accepted is not None:
                     pending_text = None
-            ptt_was_pressed = ptt_pressed
-            cancel_was_pressed = cancel_pressed
             await asyncio.sleep(poll_seconds)
     finally:
+        if voice_command_task is not None:
+            voice_command_task.cancel()
+            await asyncio.gather(voice_command_task, return_exceptions=True)
         if text_request_task is not None:
             text_request_task.cancel()
             await asyncio.gather(text_request_task, return_exceptions=True)
@@ -593,25 +760,18 @@ async def run_text_request_loop(
     manager: VoiceSessionManager,
     *,
     text_request_source: Callable[[], Awaitable[dict | None]],
-    cancel: WindowsKeyChord | None = None,
     poll_seconds: float = 0.05,
 ) -> None:
-    """Atiende el chat escrito del panel sin micrófono ni tecla PTT.
+    """Atiende el chat escrito del panel sin abrir el micrófono.
 
-    Comparte con el bucle PTT la sesión, la política y la cancelación; solo
-    cambia la entrada. La hotkey de emergencia sigue cancelando el turno.
+    Comparte con el bucle de voz la sesión, la política y la cancelación; solo
+    cambia la entrada. La cancelación se recibe desde la interfaz local.
     """
 
-    cancel_was_pressed = False
     request_task: asyncio.Task[dict | None] | None = None
     pending: dict | None = None
     try:
         while True:
-            if cancel is not None:
-                cancel_pressed = cancel.is_pressed()
-                if cancel_pressed and not cancel_was_pressed:
-                    await manager.cancel_active("Hotkey de emergencia.")
-                cancel_was_pressed = cancel_pressed
             if request_task is None and pending is None:
                 request_task = asyncio.create_task(text_request_source())
             if request_task is not None and request_task.done():

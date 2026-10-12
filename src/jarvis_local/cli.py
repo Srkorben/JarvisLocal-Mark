@@ -49,7 +49,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--doctor", action="store_true", help="Comprueba seguridad, datos y modelo local")
     parser.add_argument("--audio-doctor", action="store_true", help="Comprueba dispositivos y modelos de voz locales")
     parser.add_argument("--list-audio-devices", action="store_true", help="Lista dispositivos PortAudio/WASAPI")
-    parser.add_argument("--voice", action="store_true", help="Inicia conversación push-to-talk global")
+    parser.add_argument(
+        "--voice",
+        action="store_true",
+        help="Inicia el runtime de voz controlado por la interfaz local",
+    )
     parser.add_argument(
         "--panel-chat",
         action="store_true",
@@ -708,8 +712,7 @@ async def async_main(argv: list[str] | None = None) -> int:
                 SoundDeviceRecorder,
                 VoiceSessionManager,
                 VoiceState,
-                WindowsKeyChord,
-                run_push_to_talk_loop,
+                run_panel_voice_loop,
                 run_text_request_loop,
             )
             presence = voice_presence
@@ -745,6 +748,17 @@ async def async_main(argv: list[str] | None = None) -> int:
                 print(f"\nDetalle: {message}", flush=True)
                 if presence is not None:
                     presence.set_error(message)
+
+            def voice_session_state(
+                state: str, mode: str, active: bool, muted: bool
+            ) -> None:
+                if presence is not None:
+                    presence.set_voice_session(
+                        mode=mode,
+                        active=active,
+                        muted=muted,
+                        state=state,
+                    )
 
             if args.voice:
                 recorder = SoundDeviceRecorder(
@@ -782,7 +796,13 @@ async def async_main(argv: list[str] | None = None) -> int:
                 if presence is None
                 else lambda: asyncio.to_thread(presence.fetch_text_request, wait_seconds=5.0)
             )
-            cancel_chord = WindowsKeyChord.parse(settings.audio_cancel_hotkey)
+            voice_command_source = (
+                None
+                if presence is None
+                else lambda: asyncio.to_thread(
+                    presence.fetch_voice_command, wait_seconds=5.0
+                )
+            )
             try:
                 if presence is not None:
                     # VoiceSessionManager nace en IDLE, por lo que no emite una
@@ -790,16 +810,27 @@ async def async_main(argv: list[str] | None = None) -> int:
                     # necesita conocer que el calentamiento ya terminó.
                     presence.set_state("idle")
                 if args.voice:
+                    if voice_command_source is None:
+                        print(
+                            "La conversación por voz necesita la interfaz de Mark activa.",
+                            file=sys.stderr,
+                        )
+                        await manager.close()
+                        return 1
                     print(
                         f"Voz local lista — proyecto: {project.name}\n"
-                        f"Mantén {settings.audio_ptt_hotkey} para hablar; suelta para enviar.\n"
-                        f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
+                        "Usa Conversación o Pulsar para hablar desde la interfaz de Mark.\n"
+                        "La interfaz permite silenciar, colgar o interrumpir. Ctrl+C termina Mark."
                     )
-                    await run_push_to_talk_loop(
+                    await run_panel_voice_loop(
                         manager,
-                        ptt=WindowsKeyChord.parse(settings.audio_ptt_hotkey),
-                        cancel=cancel_chord,
+                        voice_command_source=voice_command_source,
                         text_request_source=text_request_source,
+                        on_session_state=voice_session_state,
+                        speech_rms=settings.audio_call_speech_rms,
+                        voice_start_seconds=settings.audio_call_voice_start_seconds,
+                        end_silence_seconds=settings.audio_call_end_silence_seconds,
+                        listen_rollover_seconds=settings.audio_call_rollover_seconds,
                     )
                 else:
                     if text_request_source is None:
@@ -811,12 +842,11 @@ async def async_main(argv: list[str] | None = None) -> int:
                         return 1
                     print(
                         f"Chat del panel listo — proyecto: {project.name}\n"
-                        f"Cancela el turno con {settings.audio_cancel_hotkey}. Ctrl+C termina Mark."
+                        "Cancela el turno desde la interfaz. Ctrl+C termina Mark."
                     )
                     await run_text_request_loop(
                         manager,
                         text_request_source=text_request_source,
-                        cancel=cancel_chord if os.name == "nt" else None,
                     )
             except Exception as exc:
                 if presence is not None:

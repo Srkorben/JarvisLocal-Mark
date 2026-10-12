@@ -56,12 +56,14 @@ class Settings(BaseModel):
     )
     audio_input_device: str = "wasapi_default"
     audio_output_device: str = "wasapi_default"
-    audio_ptt_hotkey: str = "ctrl+alt+j"
-    audio_cancel_hotkey: str = "ctrl+alt+pause"
     audio_sample_rate: int = Field(default=16000, ge=8000, le=48000)
     audio_min_record_seconds: float = Field(default=0.25, ge=0.05, le=5)
     audio_max_record_seconds: float = Field(default=30.0, ge=1, le=120)
     audio_min_rms: float = Field(default=0.003, ge=0, le=1)
+    audio_call_speech_rms: float = Field(default=0.008, ge=0.0001, le=1)
+    audio_call_voice_start_seconds: float = Field(default=0.12, ge=0.02, le=2)
+    audio_call_end_silence_seconds: float = Field(default=0.8, ge=0.2, le=5)
+    audio_call_rollover_seconds: float = Field(default=8.0, ge=2, le=60)
     stt_provider: str = "faster_whisper"
     stt_model_path: Path | None = None
     stt_language: str = "es"
@@ -324,12 +326,20 @@ class Settings(BaseModel):
             ),
             audio_input_device=str(audio.get("input_device", "wasapi_default")),
             audio_output_device=str(audio.get("output_device", "wasapi_default")),
-            audio_ptt_hotkey=str(audio.get("ptt_hotkey", "ctrl+alt+j")),
-            audio_cancel_hotkey=str(audio.get("cancel_hotkey", "ctrl+alt+pause")),
             audio_sample_rate=int(audio.get("sample_rate", 16000)),
             audio_min_record_seconds=float(audio.get("min_record_seconds", 0.25)),
             audio_max_record_seconds=float(audio.get("max_record_seconds", 30.0)),
             audio_min_rms=float(audio.get("min_rms", 0.003)),
+            audio_call_speech_rms=float(audio.get("call_speech_rms", 0.008)),
+            audio_call_voice_start_seconds=float(
+                audio.get("call_voice_start_seconds", 0.12)
+            ),
+            audio_call_end_silence_seconds=float(
+                audio.get("call_end_silence_seconds", 0.8)
+            ),
+            audio_call_rollover_seconds=float(
+                audio.get("call_rollover_seconds", 8.0)
+            ),
             stt_provider=str(stt.get("provider", "faster_whisper")),
             stt_model_path=_optional_project_path(
                 project_dir, stt.get("model_path")

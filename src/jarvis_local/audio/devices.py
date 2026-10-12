@@ -128,10 +128,26 @@ class SoundDeviceRecorder(AudioRecorder):
         self._started_at = 0.0
         self._overflowed = False
         self._status_messages: list[str] = []
+        self._recent_rms = 0.0
 
     @property
     def elapsed_seconds(self) -> float:
         return 0.0 if not self._started_at else time.monotonic() - self._started_at
+
+    @property
+    def recent_rms(self) -> float:
+        with self._lock:
+            return self._recent_rms
+
+    def retain_recent(self, seconds: float) -> None:
+        keep_frames = max(0, round(self.device.default_sample_rate * seconds))
+        with self._lock:
+            if not self._chunks:
+                return
+            joined = np.concatenate(self._chunks)
+            recent = joined[-keep_frames:].copy() if keep_frames else np.empty(0, dtype=np.int16)
+            self._chunks = [recent] if len(recent) else []
+            self._captured_frames = len(recent)
 
     def start(self) -> None:
         if self._stream is not None:
@@ -143,6 +159,7 @@ class SoundDeviceRecorder(AudioRecorder):
         self._captured_frames = 0
         self._overflowed = False
         self._status_messages = []
+        self._recent_rms = 0.0
         native_rate = self.device.default_sample_rate
         max_frames = round(native_rate * self.max_seconds)
 
@@ -152,6 +169,7 @@ class SoundDeviceRecorder(AudioRecorder):
                     self._status_messages.append(str(status))
             chunk = np.asarray(indata[:, 0], dtype=np.int16).copy()
             with self._lock:
+                self._recent_rms = normalized_rms(chunk)
                 remaining = max_frames - self._captured_frames
                 if remaining <= 0:
                     self._overflowed = True
@@ -204,6 +222,7 @@ class SoundDeviceRecorder(AudioRecorder):
             overflowed = self._overflowed
             self._chunks.clear()
             self._captured_frames = 0
+            self._recent_rms = 0.0
         native = (
             np.concatenate(chunks).astype(np.int16, copy=False)
             if chunks
@@ -228,6 +247,7 @@ class SoundDeviceRecorder(AudioRecorder):
         with self._lock:
             self._chunks.clear()
             self._captured_frames = 0
+            self._recent_rms = 0.0
         if stream is not None:
             try:
                 stream.abort()

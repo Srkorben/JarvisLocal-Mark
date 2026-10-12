@@ -26,6 +26,7 @@ from .server import ControlCenterHTTPServer
 from .system_status import SystemStatusMonitor
 from .text_chat import TextChatRequestStore
 from .voice_import import VoiceReferenceImporter
+from .voice_control import VoiceControlStore
 
 
 LOGGER = logging.getLogger("jarvis_local.control_center")
@@ -120,6 +121,7 @@ def serve() -> int:
         manager = ProcessManager(catalog)
         system_monitor = SystemStatusMonitor(settings, manager)
         text_chat = TextChatRequestStore()
+        voice_control = VoiceControlStore()
         database = Database(settings.database_path)
         project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
             "JarvisLocal", settings.project_dir
@@ -142,6 +144,7 @@ def serve() -> int:
             root,
             voice_importer=voice_importer.import_base64,
             text_chat=text_chat,
+            voice_control=voice_control,
             system_monitor=system_monitor,
         )
         endpoint = {
@@ -157,6 +160,7 @@ def serve() -> int:
             server.serve_forever(poll_interval=0.25)
         finally:
             text_chat.close()
+            voice_control.close()
             manager.stop_all()
             server.server_close()
             current = read_endpoint(root)
@@ -193,6 +197,7 @@ def _bind_available_server(
     root: Path | None = None,
     voice_importer=None,
     text_chat: TextChatRequestStore | None = None,
+    voice_control: VoiceControlStore | None = None,
     system_monitor: SystemStatusMonitor | None = None,
 ) -> ControlCenterHTTPServer:
     project = root or project_root()
@@ -208,6 +213,7 @@ def _bind_available_server(
                 module_snapshot=lambda: build_module_snapshot(project),
                 voice_importer=voice_importer,
                 text_chat=text_chat,
+                voice_control=voice_control,
                 system_monitor=system_monitor,
                 version="Mark Scout · Desktop Alpha",
             )

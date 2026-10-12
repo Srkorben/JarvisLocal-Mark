@@ -91,10 +91,10 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                 "label": "Audio",
                 "status": "operational",
                 "status_label": "Operativo",
-                "summary": "Conversación local semidúplex mediante pulsar-para-hablar.",
+                "summary": "Conversación local semidúplex continua o pulsar-para-hablar.",
                 "description": (
-                    "Captura una intervención mientras mantienes la tecla, la transcribe "
-                    "localmente y reproduce la respuesta sin escucha permanente."
+                    "En llamada detecta cada intervención y vuelve a escuchar tras responder; "
+                    "el modo manual captura solo mientras mantienes pulsado el micrófono."
                 ),
                 "facts": [
                     ["Entrada", _device(settings.audio_input_device)],
@@ -103,8 +103,9 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                     ["STT en", "CPU"],
                     ["TTS", f"{tts_provider} / {tts_device.upper()}"],
                     ["Chat escrito", "Sin STT; TTS solo al pedir voz"],
-                    ["Hablar", _pretty_hotkey(settings.audio_ptt_hotkey)],
-                    ["Cancelar", _pretty_hotkey(settings.audio_cancel_hotkey)],
+                    ["Modos", "Conversación / Pulsar para hablar"],
+                    ["Control", "Iniciar, silenciar, interrumpir y colgar"],
+                    ["Cancelar", "Control visible en la interfaz"],
                     ["Muestreo", f"{settings.audio_sample_rate} Hz"],
                     ["VAD", _on_off(settings.stt_vad_filter)],
                 ],
@@ -112,6 +113,7 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                     "WASAPI compartido y selección configurable",
                     "faster-whisper local y voz ligera Piper en CPU",
                     "Voz propia Chatterbox conservada (GPU solo con autorización)",
+                    "Detección local de inicio y final de cada intervención",
                     "Cancelación de captura, LLM, TTS y reproducción",
                 ],
                 "limitations": [
@@ -222,10 +224,6 @@ def _on_off(value: bool) -> str:
 
 def _device(value: str) -> str:
     return "Predeterminado de Windows (WASAPI)" if value == "wasapi_default" else value
-
-
-def _pretty_hotkey(value: str) -> str:
-    return " + ".join(part.capitalize() for part in value.split("+"))
 
 
 def _engine_status() -> dict[str, str]:

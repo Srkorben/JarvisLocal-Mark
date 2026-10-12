@@ -18,6 +18,7 @@ from .runtime import ControlCenterError, ProcessManager
 from .presence import PRESENCE_FIELDS, VoicePresenceStore
 from .system_status import SystemStatusMonitor
 from .text_chat import ChatTranscript, TextChatError, TextChatRequestStore
+from .voice_control import VoiceControlError, VoiceControlStore
 from .voice_import import VoiceImportError
 from .web import render_dashboard
 
@@ -51,6 +52,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         icon_path: Path,
         presence: VoicePresenceStore | None = None,
         text_chat: TextChatRequestStore | None = None,
+        voice_control: VoiceControlStore | None = None,
         system_monitor: SystemStatusMonitor | None = None,
         module_snapshot: Callable[[], dict[str, Any]] | None = None,
         voice_importer: Callable[..., dict[str, object]] | None = None,
@@ -62,6 +64,7 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         self.icon_path = icon_path
         self.presence = presence or VoicePresenceStore()
         self.text_chat = text_chat or TextChatRequestStore()
+        self.voice_control = voice_control or VoiceControlStore()
         self.chat_history = ChatTranscript()
         self.system_monitor = system_monitor
         self.module_snapshot = module_snapshot
@@ -119,6 +122,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             "/api/voice/presence",
             "/api/modules",
             "/api/chat/next",
+            "/api/voice/control/next",
         } and self._bearer_authenticated()
         if not self._authenticated() and not api_bearer:
             self._json_error(HTTPStatus.UNAUTHORIZED, "unauthorized", "Abre el panel desde el acceso directo local.")
@@ -138,7 +142,26 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(body)
             return
         if parsed.path == "/api/tools":
-            self._json(HTTPStatus.OK, {"tools": self.server.manager.list_status()})
+            tools = self.server.manager.list_status()
+            voice = next((item for item in tools if item["id"] == "voice"), None)
+            if (
+                voice is not None
+                and voice["status"] != "running"
+                and self.server.presence.snapshot().get("call_active") is True
+            ):
+                self.server.voice_control.clear()
+                self.server.presence.update(
+                    {
+                        "state": "offline",
+                        "transcript": "",
+                        "response": "",
+                        "error": "El runtime de voz dejó de estar disponible.",
+                        "voice_mode": "call",
+                        "call_active": False,
+                        "muted": False,
+                    }
+                )
+            self._json(HTTPStatus.OK, {"tools": tools})
             return
         if parsed.path == "/api/system":
             if self.server.system_monitor is None:
@@ -178,6 +201,18 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self._json(
                 HTTPStatus.OK,
                 {"request": self.server.text_chat.take(wait_seconds=wait_seconds)},
+            )
+            return
+        if parsed.path == "/api/voice/control/next":
+            try:
+                raw_wait = parse_qs(parsed.query).get("wait", ["5"])[0]
+                wait_seconds = max(0.0, min(float(raw_wait), 10.0))
+            except (TypeError, ValueError):
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_wait", "Espera inválida.")
+                return
+            self._json(
+                HTTPStatus.OK,
+                {"command": self.server.voice_control.take(wait_seconds=wait_seconds)},
             )
             return
         if parsed.path == "/api/modules":
@@ -275,6 +310,26 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                         "runtime": runtime["outcome"],
                     }
                 },
+            )
+            return
+        if parsed.path == "/api/voice/control":
+            try:
+                payload = self._read_json(allowed_fields=frozenset({"action"}))
+                if not self._tool_running("voice"):
+                    raise VoiceControlError(
+                        "voice_runtime_inactive",
+                        "El runtime de voz todavía no está activo.",
+                    )
+                command = self.server.voice_control.submit(payload.get("action"))
+            except VoiceControlError as exc:
+                self._json(HTTPStatus.CONFLICT, {"error": exc.as_dict()})
+                return
+            except ValueError as exc:
+                self._json_error(HTTPStatus.BAD_REQUEST, "invalid_request", str(exc))
+                return
+            self._json(
+                HTTPStatus.ACCEPTED,
+                {"result": {"outcome": "queued", "command_id": command["id"]}},
             )
             return
         if parsed.path == "/api/chat/cancel":
@@ -378,14 +433,32 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 )
                 if tool_id in _CONVERSATION_RUNTIMES:
                     self.server.presence.update(
-                        {"state": "loading", "transcript": "", "response": "", "error": ""}
+                        {
+                            "state": "loading",
+                            "transcript": "",
+                            "response": "",
+                            "error": "",
+                            "voice_mode": "call" if tool_id == "voice" else "ptt",
+                            "call_active": False,
+                            "muted": False,
+                        }
                     )
             else:
                 result = self.server.manager.stop(tool_id)
                 if tool_id in _CONVERSATION_RUNTIMES:
+                    if tool_id == "voice":
+                        self.server.voice_control.clear()
                     self.server.chat_history.observe(
                         self.server.presence.update(
-                            {"state": "offline", "transcript": "", "response": "", "error": ""}
+                            {
+                                "state": "offline",
+                                "transcript": "",
+                                "response": "",
+                                "error": "",
+                                "voice_mode": "call",
+                                "call_active": False,
+                                "muted": False,
+                            }
                         )
                     )
         except ControlCenterError as exc:

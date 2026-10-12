@@ -149,7 +149,10 @@ def build_tool_catalog(
         ToolSpec(
             id="voice",
             name="Conversación por voz",
-            description="Inicia el modo push-to-talk. Mantén Ctrl+Alt+M para hablar.",
+            description=(
+                "Activa la voz local para una llamada semidúplex automática o "
+                "para hablar manteniendo pulsado el micrófono del panel."
+            ),
             category="Asistente",
             target=core_python,
             arguments=("-m", "jarvis_local.cli", "--config", str(config), "--voice"),

@@ -34,6 +34,17 @@ class AudioRecorder(ABC):
     def elapsed_seconds(self) -> float:
         raise NotImplementedError
 
+    @property
+    def recent_rms(self) -> float:
+        """Nivel normalizado del bloque más reciente, si el backend lo ofrece."""
+
+        return 0.0
+
+    def retain_recent(self, seconds: float) -> None:
+        """Descarta silencio anterior conservando un pequeño preroll."""
+
+        return None
+
 
 class AudioPlayer(ABC):
     @abstractmethod

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from jarvis_local.control_center.catalog import ToolSpec, build_tool_catalog
 from jarvis_local.control_center import launcher as launcher_module
 from jarvis_local.control_center.presence import VoicePresenceStore
+from jarvis_local.control_center.voice_control import VoiceControlError, VoiceControlStore
 from jarvis_local.control_center.modules import build_module_snapshot
 from jarvis_local.control_center.runtime import (
     ConfirmationRequiredError,
@@ -212,8 +213,38 @@ class PresenceTests(TestCase):
         )
         self.assertEqual(updated["revision"], 1)
         self.assertEqual(updated["response"], "respuesta")
+        call = store.update(
+            {
+                "state": "listening",
+                "transcript": "",
+                "response": "",
+                "error": "",
+                "voice_mode": "call",
+                "call_active": True,
+                "muted": False,
+            }
+        )
+        self.assertTrue(call["call_active"])
+        self.assertEqual(call["voice_mode"], "call")
         with self.assertRaises(ValueError):
             store.update({"state": "idle", "allowed_tools": "all"})
+
+
+class VoiceControlTests(TestCase):
+    def test_commands_are_typed_ephemeral_and_ordered(self) -> None:
+        store = VoiceControlStore()
+        start = store.submit("start_recording")
+        finish = store.submit("finish_recording")
+        self.assertNotEqual(start["id"], finish["id"])
+        self.assertEqual(store.take()["action"], "start_recording")
+        self.assertEqual(store.take()["action"], "finish_recording")
+        self.assertIsNone(store.take())
+        self.assertEqual(store.submit("start_call")["action"], "start_call")
+        self.assertEqual(store.submit("mute")["action"], "mute")
+        self.assertEqual(store.submit("unmute")["action"], "unmute")
+        self.assertEqual(store.submit("end_call")["action"], "end_call")
+        with self.assertRaises(VoiceControlError):
+            store.submit("grant_all_permissions")
 
 
 class ModuleSnapshotTests(TestCase):
@@ -242,7 +273,10 @@ class HTTPTests(TestCase):
         root = Path(self.temp.name)
         self.fake = FakePopen()
         manager = ProcessManager(
-            {"sample": make_test_tool(root, "sample", confirmation=True)},
+            {
+                "sample": make_test_tool(root, "sample", confirmation=True),
+                "voice": make_test_tool(root, "voice"),
+            },
             popen_factory=self.fake,
             process_terminator=lambda process: process.terminate(),
             cooldown_seconds=0,
@@ -325,7 +359,19 @@ class HTTPTests(TestCase):
         status, headers, body = self.request("GET", "/", headers=self.authenticated_headers())
         self.assertEqual(status, 200)
         self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
-        self.assertIn(b"Iniciar voz", body)
+        self.assertIn(b'id="voiceMic"', body)
+        self.assertIn(b'id="callStart"', body)
+        self.assertIn(b'id="voiceModeCall"', body)
+        self.assertIn(b'id="voiceModePtt"', body)
+        self.assertIn(b'id="voiceHangup"', body)
+        self.assertIn(b'id="voiceMute"', body)
+        self.assertIn(b'id="voiceCancel"', body)
+        self.assertIn("Mantén para hablar".encode(), body)
+        self.assertIn(b'pointercancel', body)
+        self.assertIn(b'lostpointercapture', body)
+        self.assertIn(b'visibilitychange', body)
+        self.assertNotIn(b"Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M", body)
+        self.assertNotIn(b"Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Pause", body)
         self.assertIn(b"Mark Scout", body)
         self.assertIn(b'data-module="interface"', body)
         self.assertIn(b"mark.visualQuality", body)
@@ -471,6 +517,62 @@ class HTTPTests(TestCase):
         )
         self.assertEqual(status, 400)
         self.assertEqual(json.loads(body)["error"]["code"], "invalid_presence")
+
+    def test_microphone_control_requires_csrf_and_rejects_authority(self) -> None:
+        valid = json.dumps({"action": "start_recording"}).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=valid,
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"]["code"], "voice_runtime_inactive")
+
+        self.server.manager.start("voice")
+        status, _, _ = self.request(
+            "POST", "/api/voice/control", headers=self.authenticated_headers(), body=valid
+        )
+        self.assertEqual(status, 403)
+
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=valid,
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(json.loads(body)["result"]["outcome"], "queued")
+
+        status, _, body = self.request(
+            "GET",
+            "/api/voice/control/next?wait=0",
+            headers={"Authorization": "Bearer secret-token"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["command"]["action"], "start_recording")
+
+        malicious = json.dumps(
+            {"action": "start_recording", "policy": "allow_all"}
+        ).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=malicious,
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"]["code"], "invalid_request")
+
+        invalid = json.dumps({"action": "run_shell"}).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=invalid,
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"]["code"], "invalid_voice_action")
 
     def test_presence_read_accepts_internal_bearer_for_3d_client(self) -> None:
         status, _, body = self.request(
