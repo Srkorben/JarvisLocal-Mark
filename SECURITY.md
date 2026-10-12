@@ -58,7 +58,8 @@ acepta como autoridad.
 - auditoría sin contenido de conversaciones ni salida de herramientas por defecto;
 - triggers que impiden `UPDATE` y `DELETE` de eventos;
 - hashes encadenados que detectan cambios externos y no se recalculan al arrancar.
-- PTT explícito y visible; no hay wake word, escucha permanente ni keylogging;
+- llamada o PTT activados explícitamente desde la UI; no hay wake word,
+  escucha fuera de una sesión ni keylogging;
 - audio de turnos no persistido y transcripción omitida de auditoría por defecto;
 - transcripción ambigua/silenciosa no llega al LLM ni a herramientas;
 - voz hablada nunca crea un `ConfirmationReceipt` ni concede permisos;
@@ -134,9 +135,9 @@ fuera de sincronización cloud.
 
 ## Detención
 
-`Ctrl+C` detiene la CLI y cada herramienta cooperativa consulta el token antes y
-después de actuar. `Ctrl+Alt+Pause` cancela el turno de voz global incluso sin foco:
-detiene reproducción, stream HTTP y worker de clonación. Copia borra parciales y
+`Ctrl+C` detiene la CLI de diagnóstico y cada herramienta cooperativa consulta el token antes y
+después de actuar. Los controles locales **Interrumpir** y **Colgar** cancelan el turno:
+detienen reproducción, stream HTTP y worker de clonación. Copia borra parciales y
 movimiento revierte si se cancela durante la operación. El botón de bandeja sigue
 siendo trabajo de Fase 5.
 

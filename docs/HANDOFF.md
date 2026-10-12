@@ -3,6 +3,74 @@
 Última actualización: 11 de octubre de 2026 (sesión 3 de Claude Code).
 Este documento permite continuar sin depender de las conversaciones anteriores.
 
+## 0b. Entrega Codex: llamada semidúplex y PTT desde la UI (12 de octubre de 2026)
+
+Esta sección es la más reciente y prevalece sobre las descripciones históricas de
+voz y del estado de la instalación que aparecen más abajo. La intervención parte
+de `edd15ac` en `claude/ref2-chat-ui`; la implementación quedó en `0bdaebc` y
+`master` no se fusionó ni se modificó.
+
+### Resultado
+
+- Se eliminaron los controles globales de teclado para voz y el módulo
+  `audio/hotkey.py`. No queda ninguna referencia a las antiguas combinaciones en
+  código, configuración, scripts o documentación operativa.
+- La misma app ofrece **Conversación** y **Pulsar para hablar**. En conversación,
+  una sola acción prepara el runtime, abre WASAPI al quedar listo, detecta inicio
+  y fin del habla, procesa el turno y vuelve automáticamente a escuchar hasta
+  **Colgar**.
+- **Silenciar** aborta la captura temporal sin cerrar la llamada; **Reactivar** la
+  abre de nuevo. **Interrumpir** propaga cancelación a captura, STT, LLM,
+  herramientas y TTS según la fase activa.
+- El modo manual abre el micrófono al presionar y lo cierra al soltar. También
+  gestiona `pointercancel`, pérdida de captura, pérdida de foco, ocultación de la
+  página y teclado accesible para evitar grabaciones huérfanas.
+- Se amplió el canal loopback autenticado y tipado con `start_call`, `end_call`,
+  `mute`, `unmute`, `start_recording`, `finish_recording` y `cancel`. No transporta
+  texto, confirmaciones ni autoridad.
+- La presencia efímera añade `listening`, `voice_detected`, `muted` y `ending`,
+  junto con modo/llamada/silencio. Revisiones antiguas siguen sin poder sustituir
+  el estado actual.
+- El endpointing usa RMS local de baja latencia, confirmación de inicio,
+  500 ms de preroll, silencio final configurable y rollover de buffers sin voz.
+  Silero VAD continúa como filtro dentro de faster-whisper antes de aceptar la
+  transcripción.
+- La seguridad previa permanece intacta: mismo `Orchestrator`, política, memoria,
+  herramientas, auditoría y configuración de privacidad. Una transcripción no
+  confirma acciones sensibles.
+
+### Validación
+
+- Suite Windows: **173 pruebas y 9 subtests aprobados**.
+- Pruebas automáticas específicas: llamada con detección voz→silencio→respuesta→
+  nueva escucha, silencio/reactivación, PTT, cancelación, ausencia de autoridad en
+  el canal, CSRF/autenticación y runtime inactivo.
+- Validación real en este PC: `JarvisLocal.exe` inició el centro de control y el
+  runtime de voz; la UI recorrió `INICIALIZANDO → ESCUCHANDO → MICRÓFONO
+  SILENCIADO → ESCUCHANDO → EN ESPERA`. El modo manual quedó disponible y un
+  gesto breve abrió/cerró la captura sin dejarla activa.
+- Se comprobó el árbol accesible real de WPF/WebView2. Las acciones se validaron
+  además en Chromium contra **el mismo servidor y proceso de voz reales**, no un
+  runtime simulado.
+- No se declara todavía una conversación acústica humana multivuelta: requiere
+  que el propietario hable y evalúe STT, corte de pausa, semejanza y naturalidad.
+
+### Limitaciones deliberadas
+
+- Continúa siendo semidúplex. No hay cancelación de eco ni barge-in acústico
+  fiable; mientras Mark habla, se utiliza el botón visible **Interrumpir**.
+- El runtime puede permanecer preparado después de colgar para evitar otra carga
+  costosa; la captura WASAPI sí se libera. Detener el runtime desde Sistemas o
+  cerrar la app libera también modelos y procesos.
+- No se añadió wake word, escucha fuera de una llamada, segundo orquestador,
+  nuevos permisos ni persistencia de audio/transcripciones.
+
+Archivos centrales: `audio/{base,devices,session}.py`, `cli.py`, `config.py`,
+`control_center/{voice_control,presence,server,web,catalog,modules}.py`,
+`tests/{test_audio,test_control_center}.py`, ADR 0019 y documentación operativa.
+H-01 permanece **corregido** desde `81745d7`; esta entrega no reintroduce
+persistencia conversacional cuando `store_conversation_content = false`.
+
 ## Objetivo y referencias
 
 **Mark** (proyecto técnico **JarvisLocal**) es un asistente de IA local para Windows 11. Usa Qwen3-8B en `llama-server`, STT faster-whisper, TTS Piper o Chatterbox, un centro de control loopback y una app WPF/WebView2. El objetivo es un asistente de uso diario: interfaz funcional, respuestas rápidas, privacidad efectiva y capacidad progresiva de actuar sobre el escritorio.

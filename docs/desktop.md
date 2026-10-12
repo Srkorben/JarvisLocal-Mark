@@ -12,9 +12,9 @@ recuperación y desarrollo.
 La escena usa un fondo procedural, cuadrícula en perspectiva, partículas, anillos
 y ondas que cambian con la máquina de estados de voz:
 
-`OFFLINE → LOADING → IDLE → RECORDING → TRANSCRIBING → PROCESSING → SPEAKING`
+`OFFLINE → LOADING → IDLE → LISTENING → VOICE_DETECTED → TRANSCRIBING → PROCESSING → SPEAKING`
 
-También representa `CANCELLING` y `ERROR`. Durante la respuesta se muestran la
+También representa `MUTED`, `ENDING`, `CANCELLING` y `ERROR`. Durante la respuesta se muestran la
 transcripción y el texto generado. Este estado es efímero: no se guarda audio ni
 se crea un segundo historial.
 
@@ -27,8 +27,12 @@ C:\Users\andcb\Documents\AI Local\JarvisLocal\runtime\desktop\JarvisLocal.exe
 ```
 
 Si la aplicación ya está abierta, un segundo inicio activa la ventana existente.
-Dentro de ella, pulsa **Iniciar voz** y espera **En espera**. Mantén
-`Ctrl+Alt+M` para hablar y suelta para enviar. `Ctrl+Alt+Pause` cancela el turno.
+En **Conversación**, pulsa **Iniciar llamada** una vez. La misma acción inicia el
+runtime si hace falta y abre el micrófono en cuanto queda listo; después Mark
+escucha, responde y vuelve a escuchar sin nuevas pulsaciones. **Silenciar** cierra
+temporalmente la captura, **Interrumpir** cancela el turno activo y **Colgar**
+termina la sesión. En **Pulsar para hablar**, mantén el micrófono y suéltalo para
+enviar. Cambiar de modo no deja una grabación activa.
 
 El panel **Sistemas** conserva las funciones consolidadas de diagnóstico,
 enrolamiento, preparación de modelos, configuración y apertura del proyecto.
@@ -68,6 +72,8 @@ es regenerable e ignorado por Git.
 - La escena es una interfaz procedural acelerada por el navegador embebido; no es
   todavía un motor 3D como Unity o Unreal.
 - Las ondas reaccionan al estado de conversación, no a amplitud PCM en tiempo real.
+- La conversación es semidúplex: no existe barge-in acústico ni cancelación de
+  eco; para cortar una respuesta se usa **Interrumpir**.
 - No hay avatar, wake word, bandeja del sistema ni inicio automático con Windows.
 - Integraciones con APIs, Pinokio o agentes futuros deberán entrar como adaptadores
   y herramientas tipadas; la interfaz no expone ejecución arbitraria.

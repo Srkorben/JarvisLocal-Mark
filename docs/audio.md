@@ -1,22 +1,31 @@
-# Voz local push-to-talk
+# Voz local: conversación continua y pulsar para hablar
 
 Estado: infraestructura implementada y probada; referencia propia enrolada e
 importación local autorizada disponible. La aceptación de naturalidad sigue
 pendiente de evaluación humana.
 
-## Flujo
+## Modos y flujo
 
 ```text
-hotkey global (mantener) → WASAPI compartido → PCM mono 16 kHz
-  → umbral de silencio + Silero VAD dentro de faster-whisper
+UI autenticada → canal local tipado → WASAPI compartido → PCM mono 16 kHz
+  → detección de inicio/fin + Silero VAD dentro de faster-whisper
   → STTProvider → misma sesión/Orchestrator/política/memoria/tools
   → TTSProvider → WASAPI compartido → altavoces
 ```
 
-La máquina de estados es `IDLE → RECORDING → TRANSCRIBING → PROCESSING →
-SPEAKING → IDLE`, con `CANCELLING` y `ERROR`. Un único lock impide turnos
-concurrentes. La interfaz es semidúplex: mientras Mark habla no vuelve a abrir
-el micrófono. No existe wake word, escucha continua ni historial paralelo.
+**Conversación** abre una sesión explícita con un clic. Un detector de energía
+local confirma el comienzo de voz, conserva 500 ms de preroll y cierra la
+intervención tras una pausa configurable; Silero VAD sigue filtrando el audio al
+transcribir. Tras hablar, Mark vuelve automáticamente a escuchar hasta **Colgar**.
+
+**Pulsar para hablar** abre la captura solo mientras el usuario mantiene el botón.
+Perder foco, visibilidad o captura del puntero finaliza de forma segura el gesto.
+
+La máquina de estados añade `LISTENING`, `VOICE_DETECTED`, `MUTED` y `ENDING` al
+ciclo `IDLE → RECORDING → TRANSCRIBING → PROCESSING → SPEAKING → IDLE`, además
+de `CANCELLING` y `ERROR`. Un único lock impide turnos concurrentes. La interfaz
+es semidúplex: mientras Mark habla no escucha. No existe wake word, full-duplex,
+vigilancia permanente ni historial paralelo.
 
 ## Uso
 
@@ -27,14 +36,17 @@ Set-Location 'C:\Users\andcb\Documents\AI Local\JarvisLocal'
 .\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
 .\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
 
-# Interfaz PTT global
+# Runtime de voz controlado por la interfaz local
 .\.venv\Scripts\python.exe -m jarvis_local.cli --voice
 ```
 
-Mantén `Ctrl+Alt+M`, habla y suelta para transcribir. `Ctrl+Alt+Pause` cancela el
-turno activo, cierra la generación, detiene TTS y propaga el token a herramientas.
-`Ctrl+C` cierra la interfaz. Las teclas se pueden cambiar en `[audio]`; solo se
-consulta el estado de ese acorde, no se registra texto ni se implementa keylogging.
+La forma normal de uso es abrir **Mark Scout** y elegir uno de los dos modos. En
+**Conversación**, **Iniciar llamada** prepara el runtime y comienza a escuchar sin
+un segundo clic; **Silenciar** cierra temporalmente la captura y **Colgar** termina
+la sesión. En **Pulsar para hablar**, se mantiene el micrófono y se suelta para
+enviar. **Interrumpir** cancela captura, generación o TTS y propaga el token a las
+herramientas. No existen combinaciones globales de voz ni keylogging. La CLI de
+voz exige que el centro de control local esté activo.
 
 ## STT
 
@@ -167,6 +179,8 @@ La aceleración posterior de la voz clonada se registra por separado en
 - Chatterbox arranca con `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, telemetría
   deshabilitada y todos los recursos previamente descargados;
 - no hay eco acústico avanzado, full-duplex ni barge-in natural;
+- durante una llamada, el micrófono solo se abre en la fase de escucha y se
+  libera al silenciar, colgar, cerrar la aplicación o detener el runtime;
 - una voz clonada puede sonar similar, pero no constituye identidad, autenticación
   ni autorización;
 - falta escuchar y evaluar semejanza/naturalidad antes de declarar aceptada la Fase 2.

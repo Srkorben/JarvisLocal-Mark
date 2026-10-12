@@ -30,12 +30,13 @@ presenta expresamente como experimental.
 ### Voz semidúplex
 
 La expresión oída como «cebo semidúplex» era **voz semidúplex**. Significa que
-usuario y asistente se turnan: Mark escucha durante pulsar-para-hablar y, mientras
-reproduce su respuesta, no abre simultáneamente otro canal de escucha. Reduce eco,
-activaciones involuntarias y complejidad. Full-duplex y barge-in quedan pendientes.
+usuario y asistente se turnan: Mark escucha durante una llamada o al pulsar el
+control manual y, mientras reproduce su respuesta, no abre simultáneamente otro
+canal de escucha. Reduce eco, activaciones involuntarias y complejidad. Full-duplex
+y barge-in quedan pendientes.
 
-La pantalla principal ahora dice **Pulsar para hablar**; el término técnico y su
-límite aparecen dentro del módulo Audio.
+La pantalla principal ofrece **Conversación** y **Pulsar para hablar**; el término
+técnico y su límite aparecen dentro del módulo Audio.
 
 ### Política local
 
@@ -48,8 +49,7 @@ permanece en Autoridad y Seguridad.
 
 La expresión oída como «WhatsAppi» era **WASAPI** (*Windows Audio Session API*),
 la interfaz nativa de Windows usada para micrófono y altavoces en modo compartido.
-No tiene relación con WhatsApp. La pantalla principal dice **Pulsar para hablar**;
-el dispositivo real aparece dentro de Audio.
+No tiene relación con WhatsApp. El dispositivo real aparece dentro de Audio.
 
 ## Alternativas gráficas
 
@@ -98,7 +98,7 @@ constantes. Esa telemetría no está implementada.
   Canvas 2D, detección de motores y el estado experimental de Godot.
 - **Autoridad:** muestra riesgo autoaprobable, pasos, rondas y estado privilegiado.
   Es solo lectura para impedir que una página conceda permisos.
-- **Audio:** dispositivos, STT, TTS, hotkeys, VAD y límites semidúplex reales.
+- **Audio:** dispositivos, STT, TTS, modos de llamada/PTT, VAD y límites semidúplex reales.
 - **Modelo:** proveedor, modelo, contexto, temperatura, thinking y offload reales.
   La edición segura del TOML queda pendiente.
 - **Memoria:** recuentos SQLite, embeddings y límites RAG, más separación y

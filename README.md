@@ -13,7 +13,7 @@ está documentada en el ADR 0014.
 ## Estado actual
 
 Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. La Fase 2 ya tiene un
-pipeline push-to-talk local completo, una muestra propia enrolada y síntesis E2E
+pipeline de voz local semidúplex, una muestra propia enrolada y síntesis E2E
 validada; falta la aceptación humana de naturalidad para cerrarla. No se ha iniciado wake word, Playwright, UI
 Automation, broker C#, OCR ni visión.
 
@@ -36,7 +36,7 @@ Funciona ahora:
 - herramientas deterministas de búsqueda, apertura, proyectos, Git y archivos;
 - permisos `open`, `execute` y `write` denegados por defecto;
 - creación/copia sin sobrescritura y movimiento sensible confirmado con rollback.
-- micrófono/altavoces WASAPI, hotkey global, estados explícitos y semidúplex;
+- micrófono/altavoces WASAPI, controles gráficos, estados explícitos y semidúplex;
 - `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
 - `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
 - Chatterbox LatAm aislado/offline para la voz propia, ligado a consentimiento.
@@ -96,8 +96,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
 ## Uso y verificación
 
 La experiencia principal se abre desde `Mark Scout.lnk`, que ejecuta directamente
-`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. Pulsa **Iniciar voz**,
-espera el estado **En espera**, mantén `Ctrl+Alt+M` para hablar y suelta para enviar.
+`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. En **Conversación**,
+pulsa **Iniciar llamada** una sola vez: Mark escucha cada intervención, responde y
+vuelve a escuchar hasta que pulses **Colgar**. En **Pulsar para hablar**, mantén el
+micrófono presionado y suéltalo para enviar.
 Consulta [docs/desktop.md](docs/desktop.md).
 
 Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → Subir
@@ -131,7 +133,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.cli `
   --enroll-own-voice --voice-enroll-seconds 15
 
-# Inventario, diagnóstico y conversación PTT
+# Inventario, diagnóstico y runtime de voz controlado por la interfaz
 .\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
 .\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
 .\.venv\Scripts\python.exe -m jarvis_local.cli --voice
@@ -167,8 +169,10 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
 ```
 
-En voz, mantén `Ctrl+Alt+M` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
-turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confirma
+En llamada, **Silenciar** libera la captura hasta reactivarla; **Interrumpir**
+detiene el turno actual y **Colgar** cierra la sesión y el micrófono. En modo
+manual, mantén pulsado el micrófono y suelta para enviar. `Ctrl+C` solo cierra la
+CLI de diagnóstico. La voz transcrita nunca confirma
 acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
 muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
 
@@ -226,7 +230,7 @@ JarvisLocal/
 ├─ scripts/                instalación y ejecución
 ├─ src/jarvis_local/
 │  ├─ model_providers/     contrato, Ollama, llama.cpp y gestor del servidor
-│  ├─ audio/               WASAPI, STT/TTS, PTT, estados y enrolamiento
+│  ├─ audio/               WASAPI, STT/TTS, llamada/PTT, estados y enrolamiento
 │  ├─ control_center/      UI local, presencia efímera y gestor de procesos
 │  ├─ memory/              trabajo, episodios y perfil explícito
 │  ├─ rag/                 extracción, embeddings, índice y recuperación híbrida

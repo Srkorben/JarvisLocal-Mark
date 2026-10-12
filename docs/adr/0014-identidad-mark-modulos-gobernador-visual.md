@@ -12,7 +12,8 @@ RTX 5060 Laptop solo tiene 8 GB de VRAM y el LLM continúa siendo la prioridad.
 
 ## Decisión
 
-- Cambiar identidad visible, nombre del asistente y hotkey PTT a Mark / `Ctrl+Alt+M`.
+- Cambiar identidad visible y nombre del asistente a Mark. La decisión histórica
+  de usar un atajo global como PTT fue reemplazada por ADR 0019.
 - Conservar por ahora nombres técnicos `JarvisLocal`, paquete `jarvis_local`, rutas,
   SQLite, ejecutable y namespaces; migrarlos requerirá una fase separada.
 - Convertir los seis indicadores en módulos de información respaldados por una API

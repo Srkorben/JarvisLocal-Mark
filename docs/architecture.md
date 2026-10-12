@@ -7,7 +7,7 @@ adelante, el broker sensible de Windows viven en procesos separados. Seguridad,
 integridad, control del usuario y determinismo prevalecen sobre autonomía.
 
 ```text
-Micrófono → PTT/wake → VAD → STT ─┐
+Micrófono → llamada explícita/PTT → detección de turno + VAD → STT ─┐
                                   ▼
                          Gestor de conversación
                            ├─ LLM local (proceso)
@@ -48,7 +48,7 @@ archivos/proceso, DOM, UI Automation, OCR, VLM y finalmente coordenadas.
 | `model_providers` | contrato, adaptadores HTTP y ciclo de `llama-server` | inferencia sin autoridad |
 | `memory` | trabajo, episodios, decisiones temporales y perfil explícito | persistencia; no infiere autoridad |
 | `rag` | extracción, embeddings, FTS5, vectores y citas | recuperación filtrada por proyecto |
-| `audio` | WASAPI, PTT, STT/TTS sustituibles y máquina de estados | interfaz; sin autoridad nueva |
+| `audio` | WASAPI, llamada/PTT, STT/TTS sustituibles y máquina de estados | interfaz; sin autoridad nueva |
 | `control_center` | panel loopback, presencia efímera y catálogo cerrado | interfaz; ejecuta solo ToolSpec fijados |
 | `desktop` | shell WPF/WebView2 y ciclo de vida de la ventana | presentación; sin permisos del agente |
 | `benchmark` | medición reproducible de modelo, tools y cancelación | observación |
@@ -74,7 +74,9 @@ GetAsyncKeyState(acorde configurado)
 `VoiceSessionManager` serializa turnos y aplica estados explícitos. Voz no puede
 confirmar acciones sensibles: cualquier confirmación sigue entrando por la CLI
 local confiable y queda ligada al `request_id`. Audio y transcripción no se
-guardan en auditoría; solo metadatos y latencias. No existe escucha continua.
+guardan en auditoría; solo metadatos y latencias. No existe escucha permanente:
+la captura continua solo vive dentro de una llamada iniciada expresamente y se
+libera al silenciar, colgar o cerrar la aplicación.
 
 Chatterbox vive en `.venv-chatterbox-cuda` porque su NumPy/PyTorch no son
 compatibles con la pila ligera del core. El worker no escucha red: usa

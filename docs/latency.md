@@ -8,7 +8,7 @@
 de herramientas) → `llama-server` con streaming SSE → deltas publicados a la presencia →
 el panel consulta `/api/voice/presence` cada 250 ms y pinta el texto progresivamente.
 
-**Voz:** captura PTT → faster-whisper (CPU) → `Orchestrator.chat` → herramientas →
+**Voz:** captura de llamada/PTT → faster-whisper (CPU) → `Orchestrator.chat` → herramientas →
 TTS (Chatterbox, worker aislado) → reproducción WASAPI.
 
 **Texto (CLI):** `Orchestrator.chat` con impresión directa de cada delta.
@@ -172,7 +172,8 @@ set "PYTHONPATH=%USERPROFILE%\Documents\AI Local\JarvisLocal-ref1\src"
 .venv\Scripts\python.exe -m jarvis_local.latency_benchmark --config config\jarvis.toml --profile voice --tts-provider chatterbox --tts-device cuda --repeat 5
 ```
 
-9. Prueba real con la voz progresiva, usando el PTT habitual (Ctrl+C para terminar):
+9. Prueba real con la voz progresiva desde los controles de la interfaz
+   (`Ctrl+C` solo termina la CLI de diagnóstico):
 
 ```cmd
 .venv\Scripts\python.exe -m jarvis_local.cli --config config\jarvis.toml --voice
