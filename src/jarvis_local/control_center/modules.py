@@ -112,7 +112,7 @@ def build_module_snapshot(project_root: Path) -> dict[str, Any]:
                 "capabilities": [
                     "WASAPI compartido y selección configurable",
                     "faster-whisper local y voz ligera Piper en CPU",
-                    "Voz propia Chatterbox conservada (GPU solo con autorización)",
+                    "Qwen3-TTS Base con clonación ICL local y autorización explícita de GPU",
                     "Detección local de inicio y final de cada intervención",
                     "Cancelación de captura, LLM, TTS y reproducción",
                 ],

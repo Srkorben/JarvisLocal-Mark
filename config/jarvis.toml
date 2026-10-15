@@ -70,32 +70,42 @@ hotwords = "Mark Mark Scout JarvisLocal Qwen3 llama.cpp SQLite Git README Markdo
 min_language_probability = 0.60
 min_average_log_probability = -1.0
 
-# XTTS-v2 CUDA es la voz elegida después de una comparación audible con la
-# referencia local. Piper y Chatterbox permanecen como fallbacks técnicos.
+# Qwen3-TTS Base CUDA es la voz elegida después de una comparación audible con
+# la referencia local. Piper, Chatterbox y XTTS permanecen como fallbacks.
 [tts]
-provider = "xtts"
+provider = "qwen3_tts"
 voice_path = "models\\piper\\es\\es_MX\\ald\\medium\\es_MX-ald-medium.onnx"
 config_path = "models\\piper\\es\\es_MX\\ald\\medium\\es_MX-ald-medium.onnx.json"
 language = "es-MX"
 speed = 1.0
 volume = 0.9
 
-# Backend opcional de clonación. Permanece inactivo hasta crear el entorno,
-# descargar el modelo exacto y enrolar explícitamente la voz propia.
+# Backend activo de clonación. Falla cerrado hasta crear el entorno, descargar
+# el modelo exacto y enrolar explícitamente una voz autorizada.
 [voice_clone]
-python = ".venv-xtts\\Scripts\\python.exe"
-model_path = "models\\xtts-v2"
+python = ".venv-qwen3-tts\\Scripts\\python.exe"
+model_path = "models\\qwen3-tts-12hz-0.6b-base"
 model_file = "t3_es_mx_latam.safetensors"
-reference_path = "data\\voices\\user\\reference.wav"
-consent_path = "data\\voices\\user\\consent.json"
+reference_path = "data\\voices\\user\\reference-qwen.mp3"
+reference_text_path = "data\\voices\\user\\reference.txt"
+consent_path = "data\\voices\\user\\consent-qwen.json"
 device = "cuda"
 # Autorización explícita del propietario para compartir la RTX con la voz.
 # Si se desactiva, Mark vuelve de forma segura a Piper en CPU.
 allow_gpu = true
-timeout_seconds = 180
+timeout_seconds = 240
 exaggeration = 0.35
 cfg_weight = 0.5
+# Perfil conservador aprobado auditivamente con el mismo texto que fallaba con
+# los defaults 0.9/50/1.0 del modelo oficial.
 temperature = 0.65
+top_k = 30
+top_p = 0.9
+subtalker_temperature = 0.65
+subtalker_top_k = 30
+subtalker_top_p = 0.9
+# Semilla aprobada para evitar que el muestreo cambie el timbre entre turnos.
+seed = 42
 
 [storage]
 data_dir = "data"

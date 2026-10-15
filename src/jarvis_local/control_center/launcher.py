@@ -18,6 +18,7 @@ from typing import Iterator
 from ..config import Settings
 from ..database import Database
 from ..policy import PolicyEngine
+from ..process_lock import windows_singleton
 from ..projects import ProjectService
 from .catalog import build_tool_catalog
 from .modules import build_module_snapshot
@@ -116,7 +117,12 @@ def serve() -> int:
         settings = Settings.load(root / "config" / "jarvis.toml")
         tts_provider, _ = settings.effective_tts
         catalog = build_tool_catalog(
-            root, voice_tts_provider=tts_provider, piper_voice_path=settings.tts_voice_path
+            root,
+            voice_tts_provider=tts_provider,
+            piper_voice_path=settings.tts_voice_path,
+            voice_reference_path=settings.tts_clone_reference_path,
+            voice_reference_text_path=settings.tts_clone_reference_text_path,
+            voice_consent_path=settings.tts_clone_consent_path,
         )
         manager = ProcessManager(catalog)
         system_monitor = SystemStatusMonitor(settings, manager)
@@ -308,6 +314,13 @@ def _launch_lock(path: Path, *, timeout_seconds: float) -> Iterator[None]:
 
 @contextlib.contextmanager
 def _server_lock(path: Path) -> Iterator[bool]:
+    if os.name == "nt":
+        # Un nombre fijo impide que la instalación principal y una copia de
+        # desarrollo controlen el mismo micrófono/altavoz simultáneamente.
+        with windows_singleton(r"Local\MarkScout.ControlCenter") as acquired:
+            yield acquired
+        return
+
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
     if path.stat().st_size == 0:
@@ -315,23 +328,7 @@ def _server_lock(path: Path) -> Iterator[bool]:
         handle.flush()
     acquired = False
     try:
-        if os.name == "nt":
-            import msvcrt
-
-            try:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                acquired = True
-            except OSError:
-                acquired = False
-        else:
-            acquired = True
+        acquired = True
         yield acquired
     finally:
-        if acquired and os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            with contextlib.suppress(OSError):
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         handle.close()

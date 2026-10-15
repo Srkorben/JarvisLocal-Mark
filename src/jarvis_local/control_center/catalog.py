@@ -43,6 +43,9 @@ def build_tool_catalog(
     *,
     voice_tts_provider: str = "chatterbox",
     piper_voice_path: Path | None = None,
+    voice_reference_path: Path | None = None,
+    voice_reference_text_path: Path | None = None,
+    voice_consent_path: Path | None = None,
 ) -> dict[str, ToolSpec]:
     """Construye el catálogo cerrado que sustituye los nueve accesos originales.
 
@@ -58,10 +61,19 @@ def build_tool_catalog(
     core_python = root / ".venv" / "Scripts" / "python.exe"
     clone_python = root / ".venv-chatterbox-cuda" / "Scripts" / "python.exe"
     xtts_python = root / ".venv-xtts" / "Scripts" / "python.exe"
-    voice_reference = root / "data" / "voices" / "user" / "reference.wav"
-    voice_consent = root / "data" / "voices" / "user" / "consent.json"
+    qwen_tts_python = root / ".venv-qwen3-tts" / "Scripts" / "python.exe"
+    voice_reference = voice_reference_path or (
+        root / "data" / "voices" / "user" / "reference.wav"
+    )
+    voice_reference_text = voice_reference_text_path or (
+        root / "data" / "voices" / "user" / "reference.txt"
+    )
+    voice_consent = voice_consent_path or (
+        root / "data" / "voices" / "user" / "consent.json"
+    )
     clone_model = root / "models" / "chatterbox-es-latam" / "t3_es_mx_latam.safetensors"
     xtts_model = root / "models" / "xtts-v2" / "model.pth"
+    qwen_tts_model = root / "models" / "qwen3-tts-12hz-0.6b-base" / "model.safetensors"
     whisper_model = root / "models" / "faster-whisper-small" / "model.bin"
 
     program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
@@ -129,6 +141,14 @@ def build_tool_catalog(
             Requirement(xtts_python, "Entorno aislado XTTS-v2"),
             Requirement(xtts_model, "Modelo XTTS-v2"),
             Requirement(voice_reference, "Muestra de voz autorizada"),
+            Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
+        )
+    elif voice_tts_provider == "qwen3_tts":
+        tts_requirements = (
+            Requirement(qwen_tts_python, "Entorno aislado Qwen3-TTS"),
+            Requirement(qwen_tts_model, "Modelo Qwen3-TTS Base 0.6B"),
+            Requirement(voice_reference, "Muestra de voz autorizada"),
+            Requirement(voice_reference_text, "Transcripción local de la muestra"),
             Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
         )
     else:

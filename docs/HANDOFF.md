@@ -1,19 +1,38 @@
 # Mark / JarvisLocal: documento de transferencia
 
-## Actualización local: XTTS-v2 (12 de octubre de 2026)
+## Actualización local: Qwen3-TTS (12 de octubre de 2026)
 
-- Chatterbox fue rechazado tras dos referencias por sonido robotizado e interferencias.
-- El usuario aportó una referencia autorizada de 20,01 s y aceptó una comparación
-  audible de XTTS-v2 como mejora clara.
-- `xtts` es ahora un `TTSProvider` seleccionable y el proveedor efectivo local.
-- Worker aislado JSONL: modelo, latentes de hablante y priming CUDA se cargan una
-  vez; cancelación termina el proceso; no abre puertos.
-- Modelo `coqui/XTTS-v2` fijado en
-  `6c2b0d75eae4b7047358e3b6bd9325f857d43f77`; entorno `.venv-xtts`.
-- Medida real: 110,891 s de arranque y 2,281 s para generar 5,387 s de audio ya caliente.
-- Suite posterior: 178 pruebas + 9 subpruebas aprobadas.
-- Pendiente: conversación humana multivuelta desde WPF y medir el efecto conjunto
-  XTTS+Qwen sobre tokens/s. No confundir clonación zero-shot con entrenamiento.
+- Chatterbox y XTTS fueron rechazados por sonido robotizado o interferencias.
+- El usuario aprobó dos previews directos de Qwen3-TTS Base 0.6B con la referencia
+  MP3 autorizada de 20,01 s.
+- `qwen3_tts` es el proveedor efectivo; vive en `.venv-qwen3-tts` y usa el modelo
+  `Qwen/Qwen3-TTS-12Hz-0.6B-Base` fijado en
+  `5d83992436eae1d760afd27aff78a71d676296fc`.
+- Worker JSONL aislado, offline y sin puertos; conserva el prompt ICL y termina el
+  proceso al cancelar. Requiere referencia, transcripción y consentimiento.
+- Se eliminó el warmup generativo y se usa la fuente MP3 original: la conversión
+  WAV anterior hacía que Mark sonara distinto de los previews.
+- Se corrigió `[Errno 13] Permission denied` en `consent.json`; las importaciones
+  futuras restauran herencia ACL o fallan cerrado.
+- Qwen sintetiza una respuesta completa por turno con semilla 42; el texto sigue
+  mostrándose por streaming. La fragmentación anterior por frases alteraba la
+  prosodia y repetía trabajo.
+- El 13 de octubre se reprodujo el fallo con los defaults oficiales de muestreo
+  y se aprobó como natural el perfil conservador `temperature 0.65`, `top_k 30`,
+  `top_p 0.9` para talker y subtalker. Mark completo reprodujo la misma firma
+  acústica: RMS `0,04042`, pico `0,34375`, ZCR `0,06033`.
+- La reproducción integrada conserva el PCM de 24 kHz y delega la conversión a
+  WASAPI compartido (`auto_convert`). Se eliminó la interpolación lineal que no
+  formaba parte de los previews aprobados.
+- Prueba real más reciente desde WPF: 25,875 s de síntesis, 7,828 s de
+  reproducción y 43,016 s de turno total. La aceptación humana multivuelta sigue
+  pendiente; no declarar estable la calidad solo por las métricas.
+- Mutex nominales de Windows impiden una segunda instancia lógica del centro de
+  control o del runtime. Un `python.exe` del venv seguido de Python global en el
+  árbol es el lanzador y su intérprete hijo, no una duplicación por sí misma.
+- Suite completa: 192 pruebas y 9 subpruebas; auditoría válida.
+- Pendiente: aceptación humana multivuelta desde WPF y optimización sin cambiar
+  el timbre. No confundir clonación zero-shot con entrenamiento.
 
 Última actualización: 11 de octubre de 2026 (sesión 3 de Claude Code).
 Este documento permite continuar sin depender de las conversaciones anteriores.

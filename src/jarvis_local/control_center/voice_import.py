@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import uuid
 import wave
@@ -33,6 +34,33 @@ MIN_RMS = 120.0
 ALLOWED_EXTENSIONS = frozenset(
     {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac", ".wma"}
 )
+
+
+def _restore_parent_acl_inheritance(path: Path) -> None:
+    """Evita que ``os.replace`` conserve una DACL del staging ilegible para Mark.
+
+    En Windows el archivo temporal puede haberse creado desde un proceso elevado.
+    ``os.replace`` mueve también esa DACL protegida; el proceso normal de la app
+    deja entonces de poder leer su propia referencia. El directorio de destino ya
+    está restringido al usuario, SYSTEM y administradores, por lo que restaurar la
+    herencia conserva el mínimo privilegio y agrega la identidad interactiva.
+    """
+
+    if sys.platform != "win32":
+        return
+    completed = subprocess.run(
+        ["icacls.exe", str(path), "/inheritance:e"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=5,
+        shell=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout).strip()
+        raise OSError(f"No se pudo restaurar la ACL heredada de {path}: {detail}")
 
 
 class VoiceImportError(RuntimeError):
@@ -171,6 +199,8 @@ class VoiceReferenceImporter:
             try:
                 os.replace(normalized, self.reference_path)
                 os.replace(staged_consent, self.consent_path)
+                _restore_parent_acl_inheritance(self.reference_path)
+                _restore_parent_acl_inheritance(self.consent_path)
                 self.database.record_audit(
                     session_id=None,
                     project_id=self.project_id,
@@ -356,9 +386,11 @@ class VoiceReferenceImporter:
     def _restore_backup(self, backup: Path | None, had_reference: bool, had_consent: bool) -> None:
         if had_reference and backup and (backup / "reference.wav").is_file():
             shutil.copy2(backup / "reference.wav", self.reference_path)
+            _restore_parent_acl_inheritance(self.reference_path)
         elif not had_reference:
             self.reference_path.unlink(missing_ok=True)
         if had_consent and backup and (backup / "consent.json").is_file():
             shutil.copy2(backup / "consent.json", self.consent_path)
+            _restore_parent_acl_inheritance(self.consent_path)
         elif not had_consent:
             self.consent_path.unlink(missing_ok=True)

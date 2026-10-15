@@ -33,6 +33,10 @@ class TimedTTS:
         )
 
 
+class CompleteUtteranceTTS(TimedTTS):
+    prefer_complete_utterance = True
+
+
 class TimedPlayer:
     def __init__(self, seconds: float = 0.05) -> None:
         self.seconds = seconds
@@ -75,6 +79,23 @@ class ChunkerTests(TestCase):
 
 
 class SpeechPipelineTests(IsolatedAsyncioTestCase):
+    async def test_complete_utterance_provider_receives_one_prosodic_unit(self) -> None:
+        tts, player = CompleteUtteranceTTS(0.01), TimedPlayer(0.01)
+        pipeline = SpeechPipeline(
+            tts=tts, player=player, cancellation=CancellationToken()
+        )
+
+        pipeline.feed("Primera frase completa. ")
+        await asyncio.sleep(0.03)
+        self.assertEqual(tts.texts, [])
+        pipeline.feed("Segunda frase.")
+        await pipeline.finish()
+
+        self.assertEqual(
+            tts.texts, ["Primera frase completa. Segunda frase."]
+        )
+        self.assertEqual(pipeline.sentences, 1)
+
     async def test_first_audio_starts_before_the_response_finishes(self) -> None:
         tts, player = TimedTTS(0.02), TimedPlayer(0.02)
         token = CancellationToken()

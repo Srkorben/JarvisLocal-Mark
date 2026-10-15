@@ -134,7 +134,19 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
   wheel sin soporte Blackwell;
 - worker cargado offline; descartado como voz activa tras la comparación humana.
 
-### XTTS-v2 para la voz activa
+### Qwen3-TTS Base 0.6B para la voz activa
+
+- entorno aislado `.venv-qwen3-tts`;
+- `qwen-tts==0.1.1`, Apache-2.0;
+- modelo `Qwen/Qwen3-TTS-12Hz-0.6B-Base`, revisión
+  `5d83992436eae1d760afd27aff78a71d676296fc`, Apache-2.0;
+- tamaño local aproximado: 2,52 GB;
+- PyTorch/torchaudio 2.9.1+cu128 y Transformers 4.57.3;
+- CUDA en RTX 5060 Laptop; SDPA porque FlashAttention no está disponible;
+- referencia MP3 autorizada, transcripción local y manifiesto SHA-256;
+- semilla 42 y síntesis de respuesta completa para conservar el timbre aprobado.
+
+### XTTS-v2 conservado como fallback
 
 - entorno aislado `.venv-xtts`;
 - `coqui-tts==0.27.5`, código MPL-2.0;

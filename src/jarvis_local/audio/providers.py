@@ -412,7 +412,7 @@ class ChatterboxTTSProvider(TTSProvider):
             self._process = None
             raise AudioError(
                 "clone_worker_start_failed",
-                f"No se pudo iniciar Chatterbox: {exc}",
+                f"No se pudo iniciar {self.name}: {exc}",
                 component="voice_clone",
             ) from exc
         finally:
@@ -428,7 +428,7 @@ class ChatterboxTTSProvider(TTSProvider):
             await self._stop_process()
             raise AudioError(
                 "clone_worker_not_ready",
-                f"Chatterbox no quedó listo: {exc}. Revisa {self.log_path}",
+                f"{self.name} no quedó listo: {exc}. Revisa {self.log_path}",
                 component="voice_clone",
             ) from exc
 
@@ -477,7 +477,7 @@ class ChatterboxTTSProvider(TTSProvider):
                     await asyncio.gather(read_task, cancel_task, return_exceptions=True)
                     raise AudioError(
                         "synthesis_timeout",
-                        "Chatterbox excedió el tiempo máximo; el worker fue detenido.",
+                        f"{self.name} excedió el tiempo máximo; el worker fue detenido.",
                         component="voice_clone",
                     )
                 cancel_task.cancel()
@@ -496,14 +496,14 @@ class ChatterboxTTSProvider(TTSProvider):
                     await self._stop_process()
                     raise AudioError(
                         "synthesis_response_too_large",
-                        "Chatterbox devolvió más audio del permitido para una frase.",
+                        f"{self.name} devolvió más audio del permitido para una frase.",
                         component="voice_clone",
                     )
                 if len(raw) % 2:
                     await self._stop_process()
                     raise AudioError(
                         "invalid_audio_payload",
-                        "Chatterbox devolvió PCM16 con longitud inválida.",
+                        f"{self.name} devolvió PCM16 con longitud inválida.",
                         component="voice_clone",
                     )
                 samples = np.frombuffer(raw, dtype="<i2").astype(np.int16, copy=True)
@@ -520,7 +520,7 @@ class ChatterboxTTSProvider(TTSProvider):
                 await self._stop_process()
                 raise AudioError(
                     "synthesis_failed",
-                    f"Falló el worker Chatterbox: {exc}",
+                    f"Falló el worker {self.name}: {exc}",
                     component="voice_clone",
                 ) from exc
 
@@ -603,6 +603,105 @@ class XTTSTTSProvider(ChatterboxTTSProvider):
         ]
 
 
+class Qwen3TTSProvider(ChatterboxTTSProvider):
+    """Qwen3-TTS Base aislado con prompt ICL de voz precalculado."""
+
+    name = "qwen3_tts"
+    prefer_complete_utterance = True
+
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.reference_text_path = settings.tts_clone_reference_text_path
+        self.temperature = settings.tts_clone_temperature
+        self.top_k = settings.tts_clone_top_k
+        self.top_p = settings.tts_clone_top_p
+        self.subtalker_temperature = settings.tts_clone_subtalker_temperature
+        self.subtalker_top_k = settings.tts_clone_subtalker_top_k
+        self.subtalker_top_p = settings.tts_clone_subtalker_top_p
+        self.seed = settings.tts_clone_seed
+        self.log_path = settings.data_dir / "logs" / "qwen3-tts-worker.log"
+
+    def _validate_files(self) -> None:
+        required = {
+            "python": self.python,
+            "model_path": self.model_path,
+            "reference_path": self.reference_path,
+            "reference_text_path": self.reference_text_path,
+            "consent_path": self.consent_path,
+        }
+        missing = [name for name, path in required.items() if path is None]
+        if missing:
+            raise AudioError(
+                "clone_not_configured",
+                "Falta configuración de Qwen3-TTS: " + ", ".join(missing),
+                component="voice_clone",
+            )
+        if not self.python.is_file():
+            raise AudioError(
+                "clone_environment_missing",
+                f"No existe el Python aislado de Qwen3-TTS: {self.python}",
+                component="voice_clone",
+            )
+        model_files = (
+            "config.json",
+            "model.safetensors",
+            "tokenizer_config.json",
+            "speech_tokenizer/config.json",
+            "speech_tokenizer/model.safetensors",
+        )
+        absent = [name for name in model_files if not (self.model_path / name).is_file()]
+        if absent:
+            raise AudioError(
+                "clone_model_missing",
+                "Faltan archivos de Qwen3-TTS: " + ", ".join(absent),
+                component="voice_clone",
+            )
+        if not self.reference_text_path.is_file():
+            raise AudioError(
+                "clone_reference_text_missing",
+                "Falta la transcripción local de la referencia Qwen3-TTS.",
+                component="voice_clone",
+            )
+        if not self.reference_text_path.read_text(encoding="utf-8").strip():
+            raise AudioError(
+                "clone_reference_text_empty",
+                "La transcripción de la referencia Qwen3-TTS está vacía.",
+                component="voice_clone",
+            )
+        validate_own_voice_consent(self.reference_path, self.consent_path)
+
+    def _command(self) -> list[str]:
+        return [
+            str(self.python),
+            "-m",
+            "jarvis_local.qwen3_tts_worker",
+            "--model-dir",
+            str(self.model_path),
+            "--reference",
+            str(self.reference_path),
+            "--reference-text",
+            str(self.reference_text_path),
+            "--device",
+            self.device,
+            "--language",
+            "Spanish",
+            "--temperature",
+            str(self.temperature),
+            "--top-k",
+            str(self.top_k),
+            "--top-p",
+            str(self.top_p),
+            "--subtalker-temperature",
+            str(self.subtalker_temperature),
+            "--subtalker-top-k",
+            str(self.subtalker_top_k),
+            "--subtalker-top-p",
+            str(self.subtalker_top_p),
+            "--seed",
+            str(self.seed),
+        ]
+
+
 def create_stt_provider(settings: Settings) -> STTProvider:
     if settings.stt_provider == "faster_whisper":
         return FasterWhisperSTTProvider(settings)
@@ -628,6 +727,8 @@ def create_tts_provider(settings: Settings) -> TTSProvider:
         return ChatterboxTTSProvider(settings)
     if settings.tts_provider == "xtts":
         return XTTSTTSProvider(settings)
+    if settings.tts_provider == "qwen3_tts":
+        return Qwen3TTSProvider(settings)
     raise AudioError(
         "unsupported_provider",
         f"Proveedor TTS no soportado: {settings.tts_provider}",

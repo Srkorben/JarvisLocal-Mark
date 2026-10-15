@@ -87,10 +87,10 @@ las pruebas y termina con diagnóstico. Si encuentra un entorno de otra versión
 Python, lo preserva como `.venv.incompatible-<fecha>`.
 
 La voz activa usa deliberadamente otro entorno. Ya está instalada en esta máquina;
-para recrearla descarga XTTS-v2 fijado por revisión (~2,09 GB):
+para recrearla descarga Qwen3-TTS Base 0.6B fijado por revisión (~2,52 GB):
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-XTTS.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-Qwen3TTS.ps1
 ```
 
 ## Uso y verificación
@@ -106,8 +106,10 @@ Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → 
 audio**. Admite WAV, MP3, M4A, FLAC, OGG, OPUS, AAC o WMA de 15–30 segundos y
 24 MiB como máximo. Debes confirmar que eres titular de la voz o que cuentas con
 autorización del titular. El proceso permanece en `127.0.0.1`; normaliza el audio
-a PCM mono de 24 kHz y respalda la referencia anterior. XTTS usa la muestra como
-referencia zero-shot: no se reentrenan los pesos del modelo.
+a PCM mono de 24 kHz y respalda la referencia anterior. Qwen3-TTS usa la muestra
+como referencia zero-shot: no se reentrenan los pesos del modelo. La referencia
+MP3 aprobada permanece activa hasta que el importador preserve también la fuente
+de alta fidelidad para Qwen3-TTS.
 
 El centro también puede iniciarse, consultarse o detenerse desde consola para
 diagnóstico o recuperación:
@@ -173,14 +175,17 @@ En llamada, **Silenciar** libera la captura hasta reactivarla; **Interrumpir**
 detiene el turno actual y **Colgar** cierra la sesión y el micrófono. En modo
 manual, mantén pulsado el micrófono y suelta para enviar. `Ctrl+C` solo cierra la
 CLI de diagnóstico. La voz transcrita nunca confirma
-acciones sensibles. XTTS-v2 está seleccionado y falla cerrado si faltan la
-muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
+acciones sensibles. Qwen3-TTS está seleccionado y falla cerrado si faltan la
+muestra, su transcripción o el manifiesto SHA-256. Consulta
+[docs/audio.md](docs/audio.md).
 
-La voz clonada usa CUDA en la RTX 5060. Mark carga y prepara XTTS-v2 antes de
-`llama-server`, de modo que el offload adaptativo del LLM solo utiliza la VRAM
-restante. La primera carga integrada observada fue 110,9 s; después del
-precalentamiento, una respuesta de 5,39 s de audio se sintetizó en 2,28 s. Piper
-y Chatterbox se conservan como fallbacks, pero no son la selección activa.
+La voz clonada usa CUDA en la RTX 5060. Mark carga y condiciona Qwen3-TTS Base
+0.6B antes de `llama-server`, de modo que el offload adaptativo del LLM utiliza
+la VRAM restante. La ruta activa usa el MP3 original autorizado porque la
+normalización previa a WAV alteraba perceptiblemente el timbre. La salida de
+24 kHz se entrega directamente a la conversión nativa de WASAPI; Mark no aplica
+un remuestreo lineal distinto al de los previews. Piper,
+Chatterbox y XTTS se conservan como fallbacks, pero no son la selección activa.
 
 ## Configuración de modelos
 

@@ -63,34 +63,73 @@ La inferencia se ejecuta en un thread. La cancelación se comprueba antes, entre
 segmentos y después, pero CTranslate2 no garantiza interrumpir inmediatamente un
 kernel CPU ya iniciado. La transcripción ambigua o silenciosa no llega al núcleo.
 
-## Voz activa: XTTS-v2
+## Voz activa: Qwen3-TTS Base 0.6B
 
-Después de comparar audiblemente Piper, Chatterbox LatAm y XTTS-v2 con la misma
-referencia autorizada, el propietario aceptó XTTS-v2 por una mejora clara de
-semejanza y naturalidad. `config/jarvis.toml` selecciona `xtts`; los otros dos
-motores permanecen disponibles como fallbacks.
+Después de rechazar Piper, Chatterbox LatAm y XTTS-v2 por timbre robotizado o
+interferencias, el propietario aprobó previews de
+`Qwen/Qwen3-TTS-12Hz-0.6B-Base`. `config/jarvis.toml` selecciona `qwen3_tts`;
+los motores anteriores permanecen disponibles únicamente como fallbacks.
 
-XTTS vive en `.venv-xtts`, usa `coqui-tts 0.27.5`, PyTorch 2.9.1+cu128 y el
-modelo oficial `coqui/XTTS-v2` fijado en la revisión
-`6c2b0d75eae4b7047358e3b6bd9325f857d43f77` (~2,09 GB). La licencia del modelo
-es Coqui Public Model License. El worker local no abre puertos y conserva en
-memoria los latentes de la referencia. Cancelar termina el proceso.
+Qwen3-TTS vive en `.venv-qwen3-tts`, usa `qwen-tts==0.1.1`, PyTorch
+2.9.1+cu128 y Transformers 4.57.3. El modelo Apache-2.0 está fijado en la
+revisión `5d83992436eae1d760afd27aff78a71d676296fc` (~2,52 GB). El worker
+JSONL no abre puertos y se ejecuta completamente offline.
 
-PyTorch 2.9 deriva la lectura de audio a TorchCodec, que en Windows requiere una
-distribución FFmpeg compartida. El worker no instala otro FFmpeg: lee únicamente
-el WAV PCM ya validado mediante `soundfile` y entrega un tensor local a XTTS.
+La referencia efectiva es el MP3 original autorizado, su transcripción explícita
+y un manifiesto SHA-256 independiente. La conversión previa a WAV y el warmup
+generativo no reproducían el timbre aprobado. El muestreo queda fijado mediante
+`voice_clone.seed = 42`. Los defaults oficiales `0.9/50/1.0` produjeron una
+toma robótica reproducible para una frase de control. El perfil aprobado reduce
+`temperature` y `subtalker_temperature` a `0.65`, y usa `top_k = 30` y
+`top_p = 0.9` en ambos generadores.
 
-Medición integrada del 12 de octubre de 2026:
+Qwen recibe la respuesta completa como una sola unidad prosódica. El texto sigue
+apareciendo por streaming en la interfaz, pero no se sintetiza frase por frase:
+la fragmentación hacía que una respuesta de dos frases sonara diferente al
+preview y duplicaba el trabajo. Piper conserva el streaming por frases.
 
-- carga, condicionamiento y priming CUDA: 110,891 s;
-- síntesis posterior: 2,281 s para 5,387 s de audio a 24 kHz;
-- reproducción WASAPI: 5,672 s;
-- prueba humana comparativa: mejora clara frente a Chatterbox.
+Prueba real desde la aplicación WPF/centro de control del 12 de octubre de 2026:
+
+- carga del worker: 23,921 s;
+- una síntesis para dos frases: 62,125 s;
+- reproducción: 6,562 s;
+- turno completo: 74,703 s;
+- `sentences_spoken = 1`;
+- firma acústica redondeada idéntica al candidato 42 aprobado: RMS 0,04186,
+  pico 0,38867 y tasa de cruces 0,09961;
+- suite: 192 pruebas y 9 subpruebas aprobadas.
+
+La reproducción integrada ya no remuestrea el PCM de Qwen de 24 kHz mediante
+interpolación lineal de NumPy. Entrega la señal original a WASAPI compartido con
+`auto_convert`, de modo que el motor de audio de Windows realiza la conversión al
+formato nativo de 48 kHz del dispositivo. El 12 de octubre se verificó esta ruta
+primero con el candidato aprobado y luego con un turno hablado desde WPF; falta
+la aceptación auditiva humana de varios turnos distintos antes de declarar
+resuelta la variación de calidad.
+
+Prueba de regresión del perfil conservador del 13 de octubre de 2026:
+
+- la toma predeterminada que el usuario rechazó dio RMS `0,04364`, pico
+  `0,46875` y ZCR `0,12201`;
+- la misma frase con el perfil conservador fue aprobada como natural y dio RMS
+  `0,04042`, pico `0,34375` y ZCR `0,06033`;
+- Mark completo reprodujo después exactamente esa firma desde WPF: síntesis
+  `25,875 s`, reproducción `7,828 s`, turno total `43,016 s`.
+
+El centro de control y el runtime conversacional están además protegidos por
+mutex nominales de Windows. Los dos procesos que suelen verse por cada entorno
+virtual son el lanzador del `venv` y su intérprete hijo, no dos sintetizadores;
+el mutex impide una segunda instancia lógica real.
+
+La calidad tiene prioridad, pero la latencia todavía es inaceptable para una
+conversación fluida. FlashAttention no está instalado y no debe añadirse con un
+wheel incompatible. Una optimización futura debe mantener la misma salida
+acústica y probarse desde Mark, no solo mediante previews aislados.
 
 Instalación reproducible:
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-XTTS.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-Qwen3TTS.ps1
 ```
 
 ## Backend anterior: Chatterbox LatAm
@@ -213,6 +252,6 @@ La aceleración posterior de la voz clonada se registra por separado en
   libera al silenciar, colgar, cerrar la aplicación o detener el runtime;
 - una voz clonada puede sonar similar, pero no constituye identidad, autenticación
   ni autorización;
-- XTTS-v2 recibió aceptación comparativa inicial; sigue pendiente validar varios
-  turnos completos dentro de una llamada real.
+- Qwen3-TTS fue validado desde la aplicación con una respuesta controlada; sigue
+  pendiente la aceptación humana de varios turnos libres y reducir su latencia.
 

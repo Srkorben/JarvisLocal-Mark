@@ -157,6 +157,17 @@ class CatalogTests(TestCase):
             missing = catalog["voice"].missing_requirements()
             self.assertIn("Entorno aislado XTTS-v2", missing)
             self.assertIn("Modelo XTTS-v2", missing)
+
+    def test_qwen_voice_requires_model_reference_text_and_consent(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = build_tool_catalog(root, voice_tts_provider="qwen3_tts")
+
+            missing = catalog["voice"].missing_requirements()
+
+            self.assertIn("Entorno aislado Qwen3-TTS", missing)
+            self.assertIn("Modelo Qwen3-TTS Base 0.6B", missing)
+            self.assertIn("Transcripción local de la muestra", missing)
             self.assertIn("Muestra de voz autorizada", missing)
             self.assertNotIn("Entorno aislado Chatterbox", missing)
             self.assertNotIn("Modelo Chatterbox LatAm", missing)

@@ -9,7 +9,7 @@ import numpy as np
 
 from ..cancellation import CancellationToken, OperationCancelled
 from .base import AudioError, AudioPlayer, AudioRecorder
-from .dsp import normalized_rms, resample_int16
+from .dsp import mono_int16, normalized_rms, resample_int16
 from .models import AudioBuffer, AudioDeviceInfo, SynthesizedAudio
 
 
@@ -266,17 +266,19 @@ class SoundDevicePlayer(AudioPlayer):
     ) -> float:
         cancellation.raise_if_cancelled()
         sd = _sounddevice()
-        output = resample_int16(
-            audio.samples, audio.sample_rate, self.device.default_sample_rate
-        ).reshape(-1, 1)
+        # Entregar el PCM nativo al motor de audio de Windows evita el
+        # remuestreo lineal 24 kHz -> 48 kHz que degradaba especialmente las
+        # voces clonadas. WASAPI compartido realiza la conversión al formato
+        # del dispositivo con su mezclador nativo.
+        output = mono_int16(audio.samples).reshape(-1, 1)
         started = time.monotonic()
         try:
             stream = sd.OutputStream(
                 device=self.device.index,
-                samplerate=self.device.default_sample_rate,
+                samplerate=audio.sample_rate,
                 channels=1,
                 dtype="int16",
-                extra_settings=sd.WasapiSettings(exclusive=False),
+                extra_settings=sd.WasapiSettings(exclusive=False, auto_convert=True),
             )
             with self._lock:
                 self._stream = stream

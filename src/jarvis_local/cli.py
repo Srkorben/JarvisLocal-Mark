@@ -25,6 +25,7 @@ from .models import (
 from .latency import default_latency_log
 from .orchestrator import Orchestrator
 from .policy import PolicyEngine
+from .process_lock import windows_singleton
 from .projects import ProjectService
 from .rag import (
     EmbeddingProvider,
@@ -942,6 +943,16 @@ def main(argv: list[str] | None = None) -> int:
             if hasattr(stream, "reconfigure"):
                 stream.reconfigure(encoding="utf-8")
     try:
+        args = parse_args(argv)
+        if args.voice or args.panel_chat:
+            with windows_singleton(r"Local\MarkScout.CoreRuntime") as acquired:
+                if not acquired:
+                    print(
+                        "Mark ya tiene un runtime conversacional activo; se rechazó el duplicado.",
+                        file=sys.stderr,
+                    )
+                    return 73
+                return asyncio.run(async_main(argv))
         return asyncio.run(async_main(argv))
     except KeyboardInterrupt:
         print("\nCancelado por el usuario.")

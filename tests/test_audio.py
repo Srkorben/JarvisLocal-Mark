@@ -28,9 +28,11 @@ from jarvis_local.audio.enrollment import (
 )
 from jarvis_local.audio.providers import (
     ChatterboxTTSProvider,
+    Qwen3TTSProvider,
     XTTSTTSProvider,
     create_tts_provider,
 )
+from jarvis_local.qwen3_tts_worker import _is_usable_speech, _quality_metrics
 from jarvis_local.budgets import ActionBudget
 from jarvis_local.cancellation import CancellationController, CancellationToken, OperationCancelled
 from jarvis_local.database import Database
@@ -624,6 +626,95 @@ class XTTSProviderTests(IsolatedAsyncioTestCase):
                 XTTSTTSProvider(settings)._validate_files()
             self.assertEqual(caught.exception.code, "clone_model_missing")
             self.assertIn("speakers_xtts.pth", str(caught.exception))
+
+
+class Qwen3TTSProviderTests(IsolatedAsyncioTestCase):
+    def test_quality_gate_accepts_speech_and_rejects_robotic_noise(self) -> None:
+        clean = np.sin(np.linspace(0, 80 * np.pi, 24_000, dtype=np.float32)) * 0.1
+        noisy = np.tile(np.array([-0.1, 0.1], dtype=np.float32), 12_000)
+
+        self.assertTrue(_is_usable_speech(clean))
+        self.assertFalse(_is_usable_speech(noisy))
+        self.assertGreater(_quality_metrics(noisy)[2], 0.9)
+
+    async def test_factory_selects_qwen_without_changing_callers(self) -> None:
+        with TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory), tts_provider="qwen3_tts")
+            self.assertIsInstance(create_tts_provider(settings), Qwen3TTSProvider)
+
+    async def test_worker_command_uses_icl_reference_text(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / ".venv-qwen3-tts" / "Scripts" / "python.exe"
+            model = root / "models" / "qwen3-tts"
+            reference = root / "reference.wav"
+            reference_text = root / "reference.txt"
+            settings = make_settings(
+                root,
+                tts_provider="qwen3_tts",
+                tts_clone_python=python,
+                tts_clone_model_path=model,
+                tts_clone_reference_path=reference,
+                tts_clone_reference_text_path=reference_text,
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_device="cuda",
+            )
+
+            command = Qwen3TTSProvider(settings)._command()
+
+            self.assertEqual(Path(command[0]), python)
+            self.assertIn("jarvis_local.qwen3_tts_worker", command)
+            self.assertEqual(Path(command[command.index("--model-dir") + 1]), model)
+            self.assertEqual(
+                Path(command[command.index("--reference-text") + 1]), reference_text
+            )
+            self.assertEqual(command[command.index("--language") + 1], "Spanish")
+            self.assertEqual(command[command.index("--temperature") + 1], "0.8")
+            self.assertEqual(command[command.index("--top-k") + 1], "30")
+            self.assertEqual(command[command.index("--top-p") + 1], "0.9")
+            self.assertEqual(
+                command[command.index("--subtalker-temperature") + 1], "0.65"
+            )
+            self.assertEqual(command[command.index("--seed") + 1], "42")
+
+    async def test_validation_fails_closed_without_reference_transcript(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            python.touch()
+            for name in (
+                "config.json",
+                "model.safetensors",
+                "tokenizer_config.json",
+                "speech_tokenizer/config.json",
+                "speech_tokenizer/model.safetensors",
+            ):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"authorized voice fixture")
+            create_authorized_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=20.0,
+                source_extension=".wav",
+            )
+            settings = make_settings(
+                root,
+                tts_provider="qwen3_tts",
+                tts_clone_python=python,
+                tts_clone_model_path=root,
+                tts_clone_reference_path=reference,
+                tts_clone_reference_text_path=root / "missing.txt",
+                tts_clone_consent_path=consent,
+            )
+
+            with self.assertRaises(AudioError) as caught:
+                Qwen3TTSProvider(settings)._validate_files()
+
+            self.assertEqual(caught.exception.code, "clone_reference_text_missing")
 
 
 class VoiceSessionTests(IsolatedAsyncioTestCase):

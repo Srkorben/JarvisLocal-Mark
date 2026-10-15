@@ -77,6 +77,9 @@ class STTProvider(ABC):
 
 class TTSProvider(ABC):
     name: str
+    # Algunos clonadores necesitan una unidad prosódica completa para conservar
+    # el timbre; el texto puede seguir mostrándose por streaming en la UI.
+    prefer_complete_utterance: bool = False
 
     @abstractmethod
     async def warmup(self) -> None:

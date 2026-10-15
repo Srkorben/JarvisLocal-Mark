@@ -34,18 +34,24 @@ class ConfigTests(TestCase):
             with self.assertRaises(ValidationError):
                 make_settings(Path(directory), llama_gpu_layers="maximum")
 
-    def test_production_voice_profile_uses_authorized_xtts_clone(self) -> None:
+    def test_production_voice_profile_uses_authorized_qwen_clone(self) -> None:
         # Decisión explícita posterior: la voz propia prima durante una llamada.
         # La autorización CUDA continúa siendo visible y revocable.
         root = Path(__file__).resolve().parents[1]
         settings = Settings.load(root / "config" / "jarvis.toml")
-        self.assertEqual(settings.tts_provider, "xtts")
-        self.assertEqual(settings.effective_tts, ("xtts", "cuda"))
+        self.assertEqual(settings.tts_provider, "qwen3_tts")
+        self.assertEqual(settings.effective_tts, ("qwen3_tts", "cuda"))
         self.assertTrue(settings.tts_clone_allow_gpu)
         self.assertEqual(settings.tts_clone_device, "cuda")
+        self.assertEqual(settings.tts_clone_temperature, 0.65)
+        self.assertEqual(settings.tts_clone_top_k, 30)
+        self.assertEqual(settings.tts_clone_top_p, 0.9)
+        self.assertEqual(settings.tts_clone_subtalker_temperature, 0.65)
+        self.assertEqual(settings.tts_clone_subtalker_top_k, 30)
+        self.assertEqual(settings.tts_clone_subtalker_top_p, 0.9)
         self.assertTrue(
             settings.tts_clone_python.as_posix().replace("\\", "/").endswith(
-                ".venv-xtts/Scripts/python.exe"
+                ".venv-qwen3-tts/Scripts/python.exe"
             )
         )
 
@@ -65,9 +71,20 @@ class ConfigTests(TestCase):
     def test_xtts_cuda_requires_explicit_gpu_authorization(self) -> None:
         root = Path(__file__).resolve().parents[1]
         settings = Settings.load(root / "config" / "jarvis.toml")
-        blocked = settings.model_copy(update={"tts_clone_allow_gpu": False})
+        blocked = settings.model_copy(
+            update={"tts_provider": "xtts", "tts_clone_allow_gpu": False}
+        )
         self.assertTrue(blocked.tts_gpu_blocked)
         self.assertEqual(blocked.effective_tts, ("piper", "cpu"))
         allowed = blocked.model_copy(update={"tts_clone_allow_gpu": True})
         self.assertEqual(allowed.effective_tts, ("xtts", "cuda"))
+
+    def test_qwen_cuda_requires_explicit_gpu_authorization(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        settings = Settings.load(root / "config" / "jarvis.toml")
+        blocked = settings.model_copy(update={"tts_clone_allow_gpu": False})
+        self.assertTrue(blocked.tts_gpu_blocked)
+        self.assertEqual(blocked.effective_tts, ("piper", "cpu"))
+        allowed = blocked.model_copy(update={"tts_clone_allow_gpu": True})
+        self.assertEqual(allowed.effective_tts, ("qwen3_tts", "cuda"))
 

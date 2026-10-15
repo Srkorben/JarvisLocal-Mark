@@ -81,10 +81,17 @@ no está instalada en la carpeta principal.
 - mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
 - Piper validado como fallback; su voz fue rechazada por el usuario;
 - Chatterbox LatAm instalado en proceso/venv separado, CUDA y offline;
-- XTTS-v2 integrado como proveedor activo en proceso aislado, CUDA y offline;
-- referencia de 20,01 s aceptada comparativamente por el usuario; Chatterbox fue
-  descartado como voz activa por sonido robotizado e interferencias;
-- carga XTTS integrada 110,891 s; síntesis caliente 2,281 s para 5,387 s de audio;
+- Qwen3-TTS Base 0.6B integrado como proveedor activo aislado, CUDA y offline;
+- referencia MP3 autorizada de 20,01 s, transcripción explícita y manifiesto
+  SHA-256; Qwen3-TTS fue aceptado tras rechazar Chatterbox y XTTS por sonido
+  robotizado o interferencias;
+- el runtime usa la fuente MP3 original y no ejecuta warmup generativo: ambos
+  cambios igualan la ruta de Mark con los previews aprobados;
+- perfil de muestreo Qwen conservador aprobado (`temperature 0.65`, `top_k 30`,
+  `top_p 0.9` para talker y subtalker); la aplicación reprodujo la misma firma
+  acústica que la toma natural de control;
+- corregida la DACL protegida de los artefactos de voz; futuras importaciones
+  restauran la herencia ACL o fallan cerrado;
 - reserva de VRAM en orden voz→LLM y priming CUDA antes de declarar estado listo;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
 - importación desde UI de audio autorizado de 15–30 s, ocho formatos, respaldo y auditoría;
@@ -92,9 +99,14 @@ no está instalada en la carpeta principal.
 - cancelación durante captura, STT, LLM, playback y worker de clonación;
 - auditoría de metadatos/latencia sin almacenar audio ni transcripción.
 
-La aceptación comparativa del timbre se completó con XTTS-v2. La lógica de
-llamada y sus estados está probada automáticamente; la prueba acústica humana de
-varios turnos consecutivos sigue pendiente. No hay wake word, full-duplex,
+La selección comparativa terminó con Qwen3-TTS Base 0.6B. La misma ruta usada por
+Mark leyó el consentimiento, sintetizó y reprodujo audio por WASAPI; la suite
+suma 192 pruebas + 9 subpruebas. La aplicación entrega ahora el PCM nativo de
+24 kHz a la conversión compartida de WASAPI en vez de usar interpolación lineal
+propia, y mutex nominales impiden dos runtimes lógicos. Aún falta validar
+una llamada humana multivuelta desde WPF y mejorar la latencia sin sacrificar el
+timbre. La lógica de llamada y sus estados está probada automáticamente. No hay
+wake word, full-duplex,
 cancelación de eco, bandeja, UIA, Playwright ni visión.
 
 ## Fase 1 implementada
