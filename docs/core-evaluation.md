@@ -78,6 +78,6 @@ implementaciones copiadas.
 ## Decisión de roadmap
 
 Esta fue una mejora incremental de memoria, no una nueva fase. La siguiente
-prioridad continúa siendo **Fase 2: voz local push-to-talk**. Tareas persistentes,
+prioridad continúa siendo la experiencia de **voz local semidúplex**. Tareas persistentes,
 reglas, MCP y eventos permanecen diferidos y requerirán diseño y autorización
 separados.

@@ -86,7 +86,10 @@ class OrchestratorTests(IsolatedAsyncioTestCase):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             provider = SequenceProvider([text_response("Respuesta normal")])
-            _, database, project, orchestrator = self.build(root, provider)
+            # Solo se persiste si la configuración lo permite (H-01).
+            _, database, project, orchestrator = self.build(
+                root, provider, store_conversation_content=True
+            )
             session = database.create_session(project_id=project.id)
             result = await orchestrator.chat(session, project, "hola", CancellationToken())
             self.assertEqual(result, "Respuesta normal")

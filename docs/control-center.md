@@ -17,7 +17,7 @@ tres restantes no pertenecen a este proyecto y se conservan sin modificaciones.
 | Diagnóstico | PowerShell + `Diagnose-Jarvis.ps1` | `.venv`, modelos y SQLite |
 | Enrolar mi voz | PowerShell + `Enroll-OwnVoice.ps1` | micrófono, `.venv` |
 | Instalar o reparar | PowerShell + `Setup.ps1` | Python 3.12 y red para instalación |
-| Preparar clonación | PowerShell + `Setup-VoiceClone.ps1` | red, ~3,21 GB, entorno aislado |
+| Preparar clonación | PowerShell + `Setup-XTTS.ps1` | red, ~2,09 GB, entorno aislado |
 | Preparar audio | PowerShell + `Setup-AudioModels.ps1` | red y espacio para modelos |
 
 Inicialmente fuera de alcance: `Codex Admin YOLO.lnk`, `Codex Admin YOLO - Cuenta
@@ -61,6 +61,27 @@ El token se genera en cada inicio y se guarda en
 `data/control_center/endpoint.json`, cuya ACL se restringe a la cuenta actual. La
 URL inicial lo canjea por una cookie y redirige inmediatamente; los logs omiten
 queries y cookies. El servicio escucha exclusivamente en IPv4 loopback.
+
+## Panel Núcleo y monitor local
+
+El chat incluye un panel desplegable **Núcleo**. No es una simulación: utiliza el
+mismo `ProcessManager` que administra texto y voz, y por ello sus botones conservan
+el catálogo cerrado, los grupos de exclusión y la detención del árbol de procesos.
+Muestra el proveedor y modelo configurados, el estado de ambos runtimes y métricas
+de CPU, RAM, GPU y VRAM.
+
+`GET /api/system` exige la cookie local ya establecida, responde con `no-store` y
+no incluye PID, comandos, rutas privadas ni credenciales. CPU y RAM se leen con
+contadores nativos; la GPU NVIDIA se consulta con `nvidia-smi` bajo un timeout de
+800 ms. Las métricas de hardware se conservan dos segundos para evitar sondeos
+costosos. Si una fuente no existe o excede el timeout, la UI muestra
+«No disponible» y el motivo técnico seguro; nunca inventa valores.
+
+La precedencia visual es `error`, `cancelando`, `procesando`, `inicializando`,
+`disponible` y `apagado`. Una revisión antigua de presencia no puede sobrescribir
+una nueva. En Windows el servidor reclama el puerto de forma exclusiva, por lo
+que otra copia debe usar el siguiente puerto del rango cerrado en vez de compartir
+silenciosamente el mismo socket.
 
 ## Estados y conflictos
 

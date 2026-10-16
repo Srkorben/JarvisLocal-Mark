@@ -15,6 +15,10 @@ VOICE_STATES = frozenset(
         "loading",
         "queued",
         "idle",
+        "listening",
+        "voice_detected",
+        "muted",
+        "ending",
         "recording",
         "transcribing",
         "processing",
@@ -23,7 +27,9 @@ VOICE_STATES = frozenset(
         "error",
     }
 )
-PRESENCE_FIELDS = frozenset({"state", "transcript", "response", "error"})
+PRESENCE_FIELDS = frozenset(
+    {"state", "transcript", "response", "error", "voice_mode", "call_active", "muted"}
+)
 
 
 class VoicePresenceStore:
@@ -37,6 +43,9 @@ class VoicePresenceStore:
             "transcript": "",
             "response": "",
             "error": "",
+            "voice_mode": "call",
+            "call_active": False,
+            "muted": False,
             "revision": 0,
             "updated_at": _utc_now(),
         }
@@ -55,9 +64,19 @@ class VoicePresenceStore:
                 raise ValueError(f"'{field}' debe ser texto.")
             normalized[field] = value[:limit]
         with self._lock:
+            voice_mode = payload.get("voice_mode", self._value.get("voice_mode", "call"))
+            if voice_mode not in {"call", "ptt"}:
+                raise ValueError("Modo de voz inválido.")
+            call_active = payload.get("call_active", self._value.get("call_active", False))
+            muted = payload.get("muted", self._value.get("muted", False))
+            if not isinstance(call_active, bool) or not isinstance(muted, bool):
+                raise ValueError("El estado de llamada debe ser booleano.")
             self._revision += 1
             self._value = {
                 **normalized,
+                "voice_mode": voice_mode,
+                "call_active": call_active,
+                "muted": muted,
                 "revision": self._revision,
                 "updated_at": _utc_now(),
             }
@@ -84,9 +103,12 @@ class VoicePresenceClient:
         self.transcript = ""
         self.response = ""
         self.error = ""
+        self.voice_mode = "call"
+        self.call_active = False
+        self.muted = False
         self._last_delta_publish = 0.0
         # La publicación es telemetría visual: se delega a un hilo para que una
-        # UI lenta nunca bloquee el bucle de voz (hotkeys, cancelación, TTS).
+        # UI lenta nunca bloquee el bucle de voz (controles, cancelación, TTS).
         # Solo importa el estado más reciente, así que los intermedios se
         # sustituyen en lugar de encolarse.
         self._outbox: bytes | None = None
@@ -147,6 +169,24 @@ class VoicePresenceClient:
         self.error = message[:2048]
         self._publish()
 
+    def set_voice_session(
+        self,
+        *,
+        mode: str | None = None,
+        active: bool | None = None,
+        muted: bool | None = None,
+        state: str | None = None,
+    ) -> None:
+        if mode in {"call", "ptt"}:
+            self.voice_mode = mode
+        if isinstance(active, bool):
+            self.call_active = active
+        if isinstance(muted, bool):
+            self.muted = muted
+        if state in VOICE_STATES:
+            self.state = state
+        self._publish()
+
     def close(self, *, flush_timeout: float = 1.0) -> None:
         self.state = "offline"
         self._publish()
@@ -174,6 +214,8 @@ class VoicePresenceClient:
             request = payload.get("request") if response.status == 200 else None
             if not isinstance(request, dict):
                 return None
+            if request.get("cancel") is True:
+                return {"cancel": True}
             request_id = request.get("id")
             text = request.get("text")
             speak = request.get("speak")
@@ -189,6 +231,35 @@ class VoicePresenceClient:
             if isinstance(submitted_at, str):
                 result["submitted_at"] = submitted_at
             return result
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
+        finally:
+            connection.close()
+
+    def fetch_voice_command(self, *, wait_seconds: float = 5.0) -> dict[str, Any] | None:
+        """Obtiene un gesto de micrófono tipado desde el panel autenticado."""
+
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port, timeout=max(1.0, wait_seconds + 1.0)
+        )
+        try:
+            connection.request(
+                "GET",
+                f"/api/voice/control/next?wait={max(0.0, min(wait_seconds, 10.0)):g}",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            response = connection.getresponse()
+            payload = json.loads(response.read().decode("utf-8"))
+            command = payload.get("command") if response.status == 200 else None
+            if not isinstance(command, dict):
+                return None
+            action = command.get("action")
+            if action not in {
+                "start_call", "end_call", "mute", "unmute",
+                "start_recording", "finish_recording", "cancel",
+            }:
+                return None
+            return {"action": action}
         except (OSError, ValueError, json.JSONDecodeError):
             return None
         finally:
@@ -239,6 +310,9 @@ class VoicePresenceClient:
                 "transcript": self.transcript,
                 "response": self.response,
                 "error": self.error,
+                "voice_mode": self.voice_mode,
+                "call_active": self.call_active,
+                "muted": self.muted,
             },
             ensure_ascii=False,
         ).encode("utf-8")

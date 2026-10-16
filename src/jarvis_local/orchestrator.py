@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import OrderedDict
 from typing import Any
 
 from pydantic import ValidationError
@@ -17,6 +18,13 @@ from .model_providers.base import TextDeltaCallback
 from .models import ActionRequest, ProjectRecord
 from .projects import ProjectService
 from .tools.registry import ToolRegistry
+
+
+HISTORY_LIMIT = 30
+# Historial en memoria cuando no se permite guardar conversaciones: acotado
+# por sesión y por número de sesiones, y perdido al cerrar el proceso.
+VOLATILE_SESSIONS = 32
+VOLATILE_MESSAGES = 60
 
 
 class Orchestrator:
@@ -39,6 +47,40 @@ class Orchestrator:
         self.approval_callback = approval_callback
         self.latency_log = latency_log or LatencyLog(None)
         self.last_trace: TurnTrace | None = None
+        self._volatile_history: OrderedDict[str, list[dict[str, str]]] = OrderedDict()
+
+    @property
+    def stores_conversation(self) -> bool:
+        return self.settings.store_conversation_content
+
+    def _remember(self, session_id: str, role: str, content: str) -> None:
+        """Guarda un mensaje según ``logging.store_conversation_content``.
+
+        Desactivado (valor por defecto), el texto solo vive en memoria del
+        proceso para dar contexto al modelo; no se escribe en SQLite.
+        """
+
+        if self.stores_conversation:
+            self.database.add_message(session_id, role, content)
+            return
+        history = self._volatile_history.setdefault(session_id, [])
+        self._volatile_history.move_to_end(session_id)
+        history.append({"role": role, "content": content})
+        del history[:-VOLATILE_MESSAGES]
+        while len(self._volatile_history) > VOLATILE_SESSIONS:
+            self._volatile_history.popitem(last=False)
+
+    def _history(self, session_id: str) -> list[dict[str, str]]:
+        if self.stores_conversation:
+            return self.database.load_messages(session_id, limit=HISTORY_LIMIT)
+        return [dict(item) for item in self._volatile_history.get(session_id, [])[-HISTORY_LIMIT:]]
+
+    def _audit_intent(self, user_text: str) -> str:
+        """Intención para la auditoría: el texto solo si se permite guardarlo."""
+
+        if self.stores_conversation:
+            return user_text[:2000]
+        return f"[contenido no almacenado: {len(user_text)} caracteres]"
 
     def usable_tool_names(self, project: ProjectRecord) -> tuple[str, ...]:
         """Herramientas que la política podría autorizar en este proyecto.
@@ -112,10 +154,10 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
         on_text_delta: TextDeltaCallback | None,
         trace: TurnTrace,
     ) -> str:
-        self.database.add_message(session_id, "user", user_text)
+        self._remember(session_id, "user", user_text)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": self._system_prompt(project)},
-            *self.database.load_messages(session_id, limit=30),
+            *self._history(session_id),
         ]
         tool_names = self.usable_tool_names(project)
         schemas = self.registry.schemas(tool_names)
@@ -182,7 +224,7 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
                     content = response.content.strip()
                     if not content:
                         content = "No pude producir una respuesta válida."
-                    self.database.add_message(session_id, "assistant", content)
+                    self._remember(session_id, "assistant", content)
                     return content
 
                 for call_index, tool_call in enumerate(tool_calls):
@@ -196,7 +238,7 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
                             tool=name,
                             arguments=arguments,
                             expected_result=expected_result,
-                            intent=user_text,
+                            intent=self._audit_intent(user_text),
                             session_id=session_id,
                             project_id=project.id,
                         )
@@ -217,7 +259,7 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
                             session_id=session_id,
                             project_id=project.id,
                             event_type="invalid_tool_request",
-                            intent=user_text,
+                            intent=self._audit_intent(user_text),
                             tool_name=name or None,
                             outcome="denied",
                             request={"arguments": arguments},
@@ -241,7 +283,7 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
                     )
 
             fallback = "Detuve la tarea porque alcanzó el límite seguro de pasos de herramientas."
-            self.database.add_message(session_id, "assistant", fallback)
+            self._remember(session_id, "assistant", fallback)
             self.database.record_audit(
                 session_id=session_id,
                 project_id=project.id,
@@ -252,7 +294,7 @@ Si una herramienta falla, explica el fallo real y ofrece una alternativa segura.
             return fallback
         except OperationCancelled as exc:
             message = f"Turno cancelado: {exc}"
-            self.database.add_message(session_id, "assistant", message)
+            self._remember(session_id, "assistant", message)
             self.database.record_audit(
                 session_id=session_id,
                 project_id=project.id,

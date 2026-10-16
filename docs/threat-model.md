@@ -28,7 +28,7 @@ de archivos, control de aplicaciones y trazabilidad de decisiones.
 | elevación | nivel 3 deshabilitado | broker separado y UAC manual |
 | exfiltración | dominios vacíos y 0 bytes salientes | medidor en broker/navegador |
 | alteración del audit log | triggers + hash encadenado | ancla/firma externa y retención |
-| cancelación tardía | checks cooperativos + cierre del stream HTTP probado | hotkey global |
+| cancelación tardía | checks cooperativos + cierre del stream HTTP probado | controles locales Interrumpir/Colgar |
 | symlink/junction | rechazo de reparse points + ruta canónica | handles relativos en broker |
 | TOCTOU concurrente | create exclusivo, no-overwrite, hash y rollback | handles de directorio en broker |
 | proceso/comando inyectado | `.exe` allowlist sin args; Git argv fijo sin shell | firma/editor de allowlist |

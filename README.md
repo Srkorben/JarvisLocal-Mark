@@ -13,7 +13,7 @@ está documentada en el ADR 0014.
 ## Estado actual
 
 Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. La Fase 2 ya tiene un
-pipeline push-to-talk local completo, una muestra propia enrolada y síntesis E2E
+pipeline de voz local semidúplex, una muestra propia enrolada y síntesis E2E
 validada; falta la aceptación humana de naturalidad para cerrarla. No se ha iniciado wake word, Playwright, UI
 Automation, broker C#, OCR ni visión.
 
@@ -36,7 +36,7 @@ Funciona ahora:
 - herramientas deterministas de búsqueda, apertura, proyectos, Git y archivos;
 - permisos `open`, `execute` y `write` denegados por defecto;
 - creación/copia sin sobrescritura y movimiento sensible confirmado con rollback.
-- micrófono/altavoces WASAPI, hotkey global, estados explícitos y semidúplex;
+- micrófono/altavoces WASAPI, controles gráficos, estados explícitos y semidúplex;
 - `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
 - `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
 - Chatterbox LatAm aislado/offline para la voz propia, ligado a consentimiento.
@@ -46,6 +46,8 @@ Funciona ahora:
   ondas por estado de voz y centro de control loopback de catálogo cerrado;
 - presencia visual efímera para carga, escucha, transcripción, procesamiento,
   respuesta, cancelación y error, sin duplicar historial ni guardar audio.
+- panel **Núcleo** dentro del chat, con estado real de texto/voz, modelo,
+  CPU, RAM, GPU y VRAM, y controles que reutilizan el catálogo cerrado;
 - seis módulos interactivos con configuración real y límites explícitos;
 - gobernador visual Auto/Equilibrado/Eco que reduce FPS, resolución y partículas
   durante inferencia y pausa el render al ocultarse.
@@ -84,26 +86,30 @@ El script crea `.venv`, instala el paquete y dependencias de desarrollo, ejecuta
 las pruebas y termina con diagnóstico. Si encuentra un entorno de otra versión de
 Python, lo preserva como `.venv.incompatible-<fecha>`.
 
-La clonación usa deliberadamente otro entorno. Ya está instalado en esta máquina;
-para recrearlo descarga un único modelo LatAm fijado (~3,21 GB):
+La voz activa usa deliberadamente otro entorno. Ya está instalada en esta máquina;
+para recrearla descarga Qwen3-TTS Base 0.6B fijado por revisión (~2,52 GB):
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-VoiceClone.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-Qwen3TTS.ps1
 ```
 
 ## Uso y verificación
 
 La experiencia principal se abre desde `Mark Scout.lnk`, que ejecuta directamente
-`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. Pulsa **Iniciar voz**,
-espera el estado **En espera**, mantén `Ctrl+Alt+M` para hablar y suelta para enviar.
+`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. En **Conversación**,
+pulsa **Iniciar llamada** una sola vez: Mark escucha cada intervención, responde y
+vuelve a escuchar hasta que pulses **Colgar**. En **Pulsar para hablar**, mantén el
+micrófono presionado y suéltalo para enviar.
 Consulta [docs/desktop.md](docs/desktop.md).
 
 Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → Subir
 audio**. Admite WAV, MP3, M4A, FLAC, OGG, OPUS, AAC o WMA de 15–30 segundos y
 24 MiB como máximo. Debes confirmar que eres titular de la voz o que cuentas con
 autorización del titular. El proceso permanece en `127.0.0.1`; normaliza el audio
-a PCM mono de 24 kHz y respalda la referencia anterior. Chatterbox usa la muestra
-como referencia zero-shot: no se reentrenan los pesos del modelo.
+a PCM mono de 24 kHz y respalda la referencia anterior. Qwen3-TTS usa la muestra
+como referencia zero-shot: no se reentrenan los pesos del modelo. La referencia
+MP3 aprobada permanece activa hasta que el importador preserve también la fuente
+de alta fidelidad para Qwen3-TTS.
 
 El centro también puede iniciarse, consultarse o detenerse desde consola para
 diagnóstico o recuperación:
@@ -129,7 +135,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.cli `
   --enroll-own-voice --voice-enroll-seconds 15
 
-# Inventario, diagnóstico y conversación PTT
+# Inventario, diagnóstico y runtime de voz controlado por la interfaz
 .\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
 .\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
 .\.venv\Scripts\python.exe -m jarvis_local.cli --voice
@@ -165,16 +171,21 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
 .\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
 ```
 
-En voz, mantén `Ctrl+Alt+M` y suelta para enviar. `Ctrl+Alt+Pause` cancela el
-turno, TTS y generación; `Ctrl+C` cierra la CLI. La voz transcrita nunca confirma
-acciones sensibles. Chatterbox está seleccionado y falla cerrado si faltan la
-muestra o su manifiesto SHA-256. Consulta [docs/audio.md](docs/audio.md).
+En llamada, **Silenciar** libera la captura hasta reactivarla; **Interrumpir**
+detiene el turno actual y **Colgar** cierra la sesión y el micrófono. En modo
+manual, mantén pulsado el micrófono y suelta para enviar. `Ctrl+C` solo cierra la
+CLI de diagnóstico. La voz transcrita nunca confirma
+acciones sensibles. Qwen3-TTS está seleccionado y falla cerrado si faltan la
+muestra, su transcripción o el manifiesto SHA-256. Consulta
+[docs/audio.md](docs/audio.md).
 
-La voz clonada usa CUDA en la RTX 5060. Mark carga y prepara Chatterbox antes de
-`llama-server`, de modo que el offload adaptativo del LLM solo utiliza la VRAM
-restante. La carga inicial observada fue 21,74 s; una respuesta de 4,4 s de audio
-se sintetizó en 5,68 s con ambos modelos residentes. El entorno CPU anterior se
-conserva como fallback, pero no es la selección activa.
+La voz clonada usa CUDA en la RTX 5060. Mark carga y condiciona Qwen3-TTS Base
+0.6B antes de `llama-server`, de modo que el offload adaptativo del LLM utiliza
+la VRAM restante. La ruta activa usa el MP3 original autorizado porque la
+normalización previa a WAV alteraba perceptiblemente el timbre. La salida de
+24 kHz se entrega directamente a la conversión nativa de WASAPI; Mark no aplica
+un remuestreo lineal distinto al de los previews. Piper,
+Chatterbox y XTTS se conservan como fallbacks, pero no son la selección activa.
 
 ## Configuración de modelos
 
@@ -224,7 +235,7 @@ JarvisLocal/
 ├─ scripts/                instalación y ejecución
 ├─ src/jarvis_local/
 │  ├─ model_providers/     contrato, Ollama, llama.cpp y gestor del servidor
-│  ├─ audio/               WASAPI, STT/TTS, PTT, estados y enrolamiento
+│  ├─ audio/               WASAPI, STT/TTS, llamada/PTT, estados y enrolamiento
 │  ├─ control_center/      UI local, presencia efímera y gestor de procesos
 │  ├─ memory/              trabajo, episodios y perfil explícito
 │  ├─ rag/                 extracción, embeddings, índice y recuperación híbrida

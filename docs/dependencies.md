@@ -132,7 +132,31 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 - el metadato upstream de Chatterbox 0.1.7 aún fija PyTorch 2.6; se instala el
   commit fijado con `--no-deps` y dependencias explícitas para evitar degradar al
   wheel sin soporte Blackwell;
-- worker cargado offline; semejanza pendiente de la muestra del usuario.
+- worker cargado offline; descartado como voz activa tras la comparación humana.
+
+### Qwen3-TTS Base 0.6B para la voz activa
+
+- entorno aislado `.venv-qwen3-tts`;
+- `qwen-tts==0.1.1`, Apache-2.0;
+- modelo `Qwen/Qwen3-TTS-12Hz-0.6B-Base`, revisión
+  `5d83992436eae1d760afd27aff78a71d676296fc`, Apache-2.0;
+- tamaño local aproximado: 2,52 GB;
+- PyTorch/torchaudio 2.9.1+cu128 y Transformers 4.57.3;
+- CUDA en RTX 5060 Laptop; SDPA porque FlashAttention no está disponible;
+- referencia MP3 autorizada, transcripción local y manifiesto SHA-256;
+- semilla 42 y síntesis de respuesta completa para conservar el timbre aprobado.
+
+### XTTS-v2 conservado como fallback
+
+- entorno aislado `.venv-xtts`;
+- `coqui-tts==0.27.5`, código MPL-2.0;
+- modelo `coqui/XTTS-v2`, revisión
+  `6c2b0d75eae4b7047358e3b6bd9325f857d43f77`, Coqui Public Model License;
+- tamaño publicado del modelo: ~2,09 GB;
+- PyTorch/torchaudio 2.9.1+cu128, Transformers 4.57.6 y TorchCodec 0.9.1;
+- Transformers queda fijado en 4.57.6 porque 5.19 retiró una API usada por XTTS;
+- lectura del WAV validado mediante `soundfile` para evitar exigir FFmpeg shared;
+- modelo, condicionamiento y precalentamiento residen solo durante la sesión de voz.
 
 ### Normalización de referencias importadas
 
@@ -143,7 +167,8 @@ simple. `sqlite-vec` tampoco se incorporó todavía. ADR 0006 fija el límite de
 
 Fuentes primarias: [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
 [Piper OHF](https://github.com/OHF-Voice/piper1-gpl),
-[Chatterbox](https://github.com/resemble-ai/chatterbox) y
+[Chatterbox](https://github.com/resemble-ai/chatterbox),
+[XTTS-v2](https://huggingface.co/coqui/XTTS-v2) y
 [modelo LatAm](https://huggingface.co/ResembleAI/Chatterbox-Multilingual-es-mx-latam).
 
 ## Aplicación de escritorio

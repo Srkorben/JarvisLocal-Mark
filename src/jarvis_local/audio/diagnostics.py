@@ -74,7 +74,7 @@ def _file_size(path: Path | None) -> int:
 
 
 def _tts_report(settings: Settings, load_seconds: float) -> dict:
-    if settings.tts_provider == "chatterbox":
+    if settings.tts_provider in {"chatterbox", "xtts", "qwen3_tts"}:
         return {
             "provider": settings.tts_provider,
             "model_path": str(settings.tts_clone_model_path),
@@ -84,6 +84,19 @@ def _tts_report(settings: Settings, load_seconds: float) -> dict:
             ),
             "size_bytes": _directory_size(settings.tts_clone_model_path),
             "device": settings.tts_clone_device,
+            "seed": settings.tts_clone_seed if settings.tts_provider == "qwen3_tts" else None,
+            "sampling": (
+                {
+                    "temperature": settings.tts_clone_temperature,
+                    "top_k": settings.tts_clone_top_k,
+                    "top_p": settings.tts_clone_top_p,
+                    "subtalker_temperature": settings.tts_clone_subtalker_temperature,
+                    "subtalker_top_k": settings.tts_clone_subtalker_top_k,
+                    "subtalker_top_p": settings.tts_clone_subtalker_top_p,
+                }
+                if settings.tts_provider == "qwen3_tts"
+                else None
+            ),
             "load_seconds": load_seconds,
             "isolated_process": True,
         }

@@ -8,11 +8,16 @@ import wave
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import Mock, patch
 
 import numpy as np
 
 from jarvis_local.audio.enrollment import validate_own_voice_consent
-from jarvis_local.control_center.voice_import import VoiceImportError, VoiceReferenceImporter
+from jarvis_local.control_center.voice_import import (
+    VoiceImportError,
+    VoiceReferenceImporter,
+    _restore_parent_acl_inheritance,
+)
 from jarvis_local.database import Database
 
 
@@ -29,6 +34,32 @@ def pcm_wave_bytes(path: Path, *, seconds: float, frequency: float = 220.0) -> b
 
 
 class VoiceReferenceImporterTests(TestCase):
+    @patch("jarvis_local.control_center.voice_import.subprocess.run")
+    @patch("jarvis_local.control_center.voice_import.sys.platform", "win32")
+    def test_windows_import_restores_parent_acl_inheritance(self, run: Mock) -> None:
+        run.return_value = Mock(returncode=0, stdout="", stderr="")
+
+        _restore_parent_acl_inheritance(Path(r"C:\voices\reference.wav"))
+
+        run.assert_called_once_with(
+            ["icacls.exe", r"C:\voices\reference.wav", "/inheritance:e"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=5,
+            shell=False,
+        )
+
+    @patch("jarvis_local.control_center.voice_import.subprocess.run")
+    @patch("jarvis_local.control_center.voice_import.sys.platform", "win32")
+    def test_windows_import_fails_closed_when_acl_repair_fails(self, run: Mock) -> None:
+        run.return_value = Mock(returncode=5, stdout="", stderr="Acceso denegado")
+
+        with self.assertRaises(OSError):
+            _restore_parent_acl_inheritance(Path(r"C:\voices\reference.wav"))
+
     def make_importer(self, root: Path) -> tuple[VoiceReferenceImporter, Database]:
         data = root / "data"
         database = Database(data / "test.db")

@@ -18,7 +18,7 @@ from jarvis_local.audio import (
     TranscriptionResult,
     VoiceSessionManager,
     VoiceState,
-    WindowsKeyChord,
+    run_panel_voice_loop,
 )
 from jarvis_local.audio.providers import _safe_transcript_text
 from jarvis_local.audio.enrollment import (
@@ -26,7 +26,13 @@ from jarvis_local.audio.enrollment import (
     create_own_voice_consent,
     validate_own_voice_consent,
 )
-from jarvis_local.audio.providers import ChatterboxTTSProvider, create_tts_provider
+from jarvis_local.audio.providers import (
+    ChatterboxTTSProvider,
+    Qwen3TTSProvider,
+    XTTSTTSProvider,
+    create_tts_provider,
+)
+from jarvis_local.qwen3_tts_worker import _is_usable_speech, _quality_metrics
 from jarvis_local.budgets import ActionBudget
 from jarvis_local.cancellation import CancellationController, CancellationToken, OperationCancelled
 from jarvis_local.database import Database
@@ -192,17 +198,240 @@ def audio_buffer(*, rms: float = 0.2, duration: float = 1.0) -> AudioBuffer:
     )
 
 
-class HotkeyTests(TestCase):
-    def test_parses_only_configured_keys(self) -> None:
-        chord = WindowsKeyChord.parse("ctrl+alt+j")
-        self.assertEqual(chord.virtual_keys, (0x11, 0x12, ord("J")))
-        with self.assertRaises(ValueError):
-            WindowsKeyChord.parse("ctrl+tecla-desconocida")
-
+class TranscriptSafetyTests(TestCase):
     def test_transcript_is_valid_utf8_before_reaching_the_model(self) -> None:
         value = _safe_transcript_text("hola\udced\x00 mundo")
         self.assertEqual(value, "hola? mundo")
         self.assertEqual(value.encode("utf-8").decode("utf-8"), value)
+
+
+class _PanelLoopManager:
+    def __init__(self) -> None:
+        self.state = VoiceState.IDLE
+        self.recorder = type(
+            "Recorder",
+            (),
+            {
+                "elapsed_seconds": 0.0,
+                "recent_rms": 0.0,
+                "retain_recent": lambda self, seconds: None,
+            },
+        )()
+        self.max_record_seconds = 30.0
+        self.min_rms = 0.003
+        self.actions: list[str] = []
+
+    async def start_recording(self, *, interface="push_to_talk") -> bool:
+        self.actions.append(f"start:{interface}")
+        self.state = VoiceState.RECORDING
+        return True
+
+    async def finish_recording(self) -> None:
+        self.actions.append("finish")
+        self.state = VoiceState.IDLE
+
+    async def cancel_active(self, reason: str) -> None:
+        self.actions.append("cancel")
+        self.state = VoiceState.IDLE
+
+    async def refresh_recording(self) -> bool:
+        self.actions.append("refresh")
+        return True
+
+    async def discard_recording(self, reason: str) -> bool:
+        if self.state is not VoiceState.RECORDING:
+            return False
+        self.actions.append("discard")
+        self.state = VoiceState.IDLE
+        return True
+
+    async def close(self) -> None:
+        self.actions.append("close")
+
+
+class PanelVoiceLoopTests(IsolatedAsyncioTestCase):
+    async def test_ui_press_and_release_drive_one_recording(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_recording"})
+        await commands.put({"action": "finish_recording"})
+        for _ in range(100):
+            if manager.actions[:2] == ["start:push_to_talk", "finish"]:
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(
+            manager.actions, ["start:push_to_talk", "finish", "close"]
+        )
+
+    async def test_call_detects_voice_silence_restarts_and_hangs_up(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                speech_rms=0.01,
+                voice_start_seconds=0.003,
+                end_silence_seconds=0.005,
+                listen_rollover_seconds=5,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.recent_rms = 0.03
+        for _ in range(100):
+            if any(item[0] == "voice_detected" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.recent_rms = 0.0
+        for _ in range(100):
+            if "finish" in manager.actions:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "end_call"})
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("listening", "call", True, False), states)
+        self.assertIn(("voice_detected", "call", True, False), states)
+        self.assertIn(("ending", "call", False, False), states)
+        self.assertIn("finish", manager.actions)
+        self.assertEqual(manager.actions[-1], "close")
+
+    async def test_call_mute_releases_capture_and_unmute_reopens_it(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "mute"})
+        for _ in range(100):
+            if any(item[0] == "muted" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        self.assertEqual(manager.state, VoiceState.IDLE)
+        self.assertIn("discard", manager.actions)
+        await commands.put({"action": "unmute"})
+        for _ in range(100):
+            if manager.actions.count("start:continuous_call") >= 2:
+                break
+            await asyncio.sleep(0.002)
+        self.assertEqual(manager.state, VoiceState.RECORDING)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("muted", "call", True, True), states)
+        self.assertGreaterEqual(manager.actions.count("start:continuous_call"), 2)
+
+    async def test_interrupt_cancels_current_turn_and_call_resumes_listening(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        await commands.put({"action": "cancel"})
+        for _ in range(100):
+            if (
+                "cancel" in manager.actions
+                and manager.actions.count("start:continuous_call") >= 2
+            ):
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn("cancel", manager.actions)
+        self.assertGreaterEqual(manager.actions.count("start:continuous_call"), 2)
+        self.assertEqual(manager.actions[-1], "close")
+
+    async def test_rollover_never_discards_a_voice_start_candidate(self) -> None:
+        manager = _PanelLoopManager()
+        commands: asyncio.Queue[dict] = asyncio.Queue()
+        states: list[tuple[str, str, bool, bool]] = []
+
+        async def next_command() -> dict:
+            return await commands.get()
+
+        task = asyncio.create_task(
+            run_panel_voice_loop(
+                manager,
+                voice_command_source=next_command,
+                on_session_state=lambda *value: states.append(value),
+                speech_rms=0.01,
+                voice_start_seconds=0.004,
+                listen_rollover_seconds=2.0,
+                poll_seconds=0.001,
+            )
+        )
+        await commands.put({"action": "start_call"})
+        for _ in range(100):
+            if manager.state is VoiceState.RECORDING:
+                break
+            await asyncio.sleep(0.002)
+        manager.recorder.elapsed_seconds = 3.0
+        manager.recorder.recent_rms = 0.03
+        for _ in range(100):
+            if any(item[0] == "voice_detected" for item in states):
+                break
+            await asyncio.sleep(0.002)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertIn(("voice_detected", "call", True, False), states)
+        self.assertNotIn("refresh", manager.actions)
 
 
 class VoiceCloneConsentTests(TestCase):
@@ -339,6 +568,153 @@ class ChatterboxProviderTests(IsolatedAsyncioTestCase):
                 await asyncio.wait_for(task, timeout=2)
             self.assertIsNone(provider._process)
             await provider.aclose()
+
+
+class XTTSProviderTests(IsolatedAsyncioTestCase):
+    async def test_factory_selects_xtts_without_changing_callers(self) -> None:
+        with TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory), tts_provider="xtts")
+            self.assertIsInstance(create_tts_provider(settings), XTTSTTSProvider)
+
+    async def test_worker_command_uses_isolated_environment_and_local_model(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / ".venv-xtts" / "Scripts" / "python.exe"
+            model = root / "models" / "xtts-v2"
+            reference = root / "reference.wav"
+            settings = make_settings(
+                root,
+                tts_provider="xtts",
+                tts_clone_python=python,
+                tts_clone_model_path=model,
+                tts_clone_reference_path=reference,
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_device="cuda",
+            )
+            command = XTTSTTSProvider(settings)._command()
+            self.assertEqual(Path(command[0]), python)
+            self.assertIn("jarvis_local.xtts_worker", command)
+            self.assertEqual(Path(command[command.index("--model-dir") + 1]), model)
+            self.assertEqual(Path(command[command.index("--reference") + 1]), reference)
+            self.assertEqual(command[command.index("--device") + 1], "cuda")
+
+    async def test_validation_fails_closed_when_an_xtts_artifact_is_missing(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            python.touch()
+            for name in ("config.json", "dvae.pth", "model.pth", "vocab.json"):
+                (root / name).touch()
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"authorized voice fixture")
+            create_authorized_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=20.0,
+                source_extension=".wav",
+            )
+            settings = make_settings(
+                root,
+                tts_provider="xtts",
+                tts_clone_python=python,
+                tts_clone_model_path=root,
+                tts_clone_reference_path=reference,
+                tts_clone_consent_path=consent,
+            )
+            with self.assertRaises(AudioError) as caught:
+                XTTSTTSProvider(settings)._validate_files()
+            self.assertEqual(caught.exception.code, "clone_model_missing")
+            self.assertIn("speakers_xtts.pth", str(caught.exception))
+
+
+class Qwen3TTSProviderTests(IsolatedAsyncioTestCase):
+    def test_quality_gate_accepts_speech_and_rejects_robotic_noise(self) -> None:
+        clean = np.sin(np.linspace(0, 80 * np.pi, 24_000, dtype=np.float32)) * 0.1
+        noisy = np.tile(np.array([-0.1, 0.1], dtype=np.float32), 12_000)
+
+        self.assertTrue(_is_usable_speech(clean))
+        self.assertFalse(_is_usable_speech(noisy))
+        self.assertGreater(_quality_metrics(noisy)[2], 0.9)
+
+    async def test_factory_selects_qwen_without_changing_callers(self) -> None:
+        with TemporaryDirectory() as directory:
+            settings = make_settings(Path(directory), tts_provider="qwen3_tts")
+            self.assertIsInstance(create_tts_provider(settings), Qwen3TTSProvider)
+
+    async def test_worker_command_uses_icl_reference_text(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / ".venv-qwen3-tts" / "Scripts" / "python.exe"
+            model = root / "models" / "qwen3-tts"
+            reference = root / "reference.wav"
+            reference_text = root / "reference.txt"
+            settings = make_settings(
+                root,
+                tts_provider="qwen3_tts",
+                tts_clone_python=python,
+                tts_clone_model_path=model,
+                tts_clone_reference_path=reference,
+                tts_clone_reference_text_path=reference_text,
+                tts_clone_consent_path=root / "consent.json",
+                tts_clone_device="cuda",
+            )
+
+            command = Qwen3TTSProvider(settings)._command()
+
+            self.assertEqual(Path(command[0]), python)
+            self.assertIn("jarvis_local.qwen3_tts_worker", command)
+            self.assertEqual(Path(command[command.index("--model-dir") + 1]), model)
+            self.assertEqual(
+                Path(command[command.index("--reference-text") + 1]), reference_text
+            )
+            self.assertEqual(command[command.index("--language") + 1], "Spanish")
+            self.assertEqual(command[command.index("--temperature") + 1], "0.8")
+            self.assertEqual(command[command.index("--top-k") + 1], "30")
+            self.assertEqual(command[command.index("--top-p") + 1], "0.9")
+            self.assertEqual(
+                command[command.index("--subtalker-temperature") + 1], "0.65"
+            )
+            self.assertEqual(command[command.index("--seed") + 1], "42")
+
+    async def test_validation_fails_closed_without_reference_transcript(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            python = root / "python.exe"
+            python.touch()
+            for name in (
+                "config.json",
+                "model.safetensors",
+                "tokenizer_config.json",
+                "speech_tokenizer/config.json",
+                "speech_tokenizer/model.safetensors",
+            ):
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+            reference = root / "reference.wav"
+            consent = root / "consent.json"
+            reference.write_bytes(b"authorized voice fixture")
+            create_authorized_voice_consent(
+                reference_path=reference,
+                consent_path=consent,
+                duration_seconds=20.0,
+                source_extension=".wav",
+            )
+            settings = make_settings(
+                root,
+                tts_provider="qwen3_tts",
+                tts_clone_python=python,
+                tts_clone_model_path=root,
+                tts_clone_reference_path=reference,
+                tts_clone_reference_text_path=root / "missing.txt",
+                tts_clone_consent_path=consent,
+            )
+
+            with self.assertRaises(AudioError) as caught:
+                Qwen3TTSProvider(settings)._validate_files()
+
+            self.assertEqual(caught.exception.code, "clone_reference_text_missing")
 
 
 class VoiceSessionTests(IsolatedAsyncioTestCase):

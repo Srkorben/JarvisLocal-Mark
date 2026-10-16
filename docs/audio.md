@@ -1,22 +1,31 @@
-# Voz local push-to-talk
+# Voz local: conversación continua y pulsar para hablar
 
 Estado: infraestructura implementada y probada; referencia propia enrolada e
 importación local autorizada disponible. La aceptación de naturalidad sigue
 pendiente de evaluación humana.
 
-## Flujo
+## Modos y flujo
 
 ```text
-hotkey global (mantener) → WASAPI compartido → PCM mono 16 kHz
-  → umbral de silencio + Silero VAD dentro de faster-whisper
+UI autenticada → canal local tipado → WASAPI compartido → PCM mono 16 kHz
+  → detección de inicio/fin + Silero VAD dentro de faster-whisper
   → STTProvider → misma sesión/Orchestrator/política/memoria/tools
   → TTSProvider → WASAPI compartido → altavoces
 ```
 
-La máquina de estados es `IDLE → RECORDING → TRANSCRIBING → PROCESSING →
-SPEAKING → IDLE`, con `CANCELLING` y `ERROR`. Un único lock impide turnos
-concurrentes. La interfaz es semidúplex: mientras Mark habla no vuelve a abrir
-el micrófono. No existe wake word, escucha continua ni historial paralelo.
+**Conversación** abre una sesión explícita con un clic. Un detector de energía
+local confirma el comienzo de voz, conserva 500 ms de preroll y cierra la
+intervención tras una pausa configurable; Silero VAD sigue filtrando el audio al
+transcribir. Tras hablar, Mark vuelve automáticamente a escuchar hasta **Colgar**.
+
+**Pulsar para hablar** abre la captura solo mientras el usuario mantiene el botón.
+Perder foco, visibilidad o captura del puntero finaliza de forma segura el gesto.
+
+La máquina de estados añade `LISTENING`, `VOICE_DETECTED`, `MUTED` y `ENDING` al
+ciclo `IDLE → RECORDING → TRANSCRIBING → PROCESSING → SPEAKING → IDLE`, además
+de `CANCELLING` y `ERROR`. Un único lock impide turnos concurrentes. La interfaz
+es semidúplex: mientras Mark habla no escucha. No existe wake word, full-duplex,
+vigilancia permanente ni historial paralelo.
 
 ## Uso
 
@@ -27,14 +36,17 @@ Set-Location 'C:\Users\andcb\Documents\AI Local\JarvisLocal'
 .\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
 .\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
 
-# Interfaz PTT global
+# Runtime de voz controlado por la interfaz local
 .\.venv\Scripts\python.exe -m jarvis_local.cli --voice
 ```
 
-Mantén `Ctrl+Alt+M`, habla y suelta para transcribir. `Ctrl+Alt+Pause` cancela el
-turno activo, cierra la generación, detiene TTS y propaga el token a herramientas.
-`Ctrl+C` cierra la interfaz. Las teclas se pueden cambiar en `[audio]`; solo se
-consulta el estado de ese acorde, no se registra texto ni se implementa keylogging.
+La forma normal de uso es abrir **Mark Scout** y elegir uno de los dos modos. En
+**Conversación**, **Iniciar llamada** prepara el runtime y comienza a escuchar sin
+un segundo clic; **Silenciar** cierra temporalmente la captura y **Colgar** termina
+la sesión. En **Pulsar para hablar**, se mantiene el micrófono y se suelta para
+enviar. **Interrumpir** cancela captura, generación o TTS y propaga el token a las
+herramientas. No existen combinaciones globales de voz ni keylogging. La CLI de
+voz exige que el centro de control local esté activo.
 
 ## STT
 
@@ -51,11 +63,79 @@ La inferencia se ejecuta en un thread. La cancelación se comprueba antes, entre
 segmentos y después, pero CTranslate2 no garantiza interrumpir inmediatamente un
 kernel CPU ya iniciado. La transcripción ambigua o silenciosa no llega al núcleo.
 
-## Voz propia: Chatterbox LatAm
+## Voz activa: Qwen3-TTS Base 0.6B
 
-Por preferencia explícita del usuario, Piper no es la voz activa. Se conserva como
-backend técnico de respaldo, pero `config/jarvis.toml` selecciona `chatterbox` y
-falla cerrado si la muestra o el consentimiento no son válidos.
+Después de rechazar Piper, Chatterbox LatAm y XTTS-v2 por timbre robotizado o
+interferencias, el propietario aprobó previews de
+`Qwen/Qwen3-TTS-12Hz-0.6B-Base`. `config/jarvis.toml` selecciona `qwen3_tts`;
+los motores anteriores permanecen disponibles únicamente como fallbacks.
+
+Qwen3-TTS vive en `.venv-qwen3-tts`, usa `qwen-tts==0.1.1`, PyTorch
+2.9.1+cu128 y Transformers 4.57.3. El modelo Apache-2.0 está fijado en la
+revisión `5d83992436eae1d760afd27aff78a71d676296fc` (~2,52 GB). El worker
+JSONL no abre puertos y se ejecuta completamente offline.
+
+La referencia efectiva es el MP3 original autorizado, su transcripción explícita
+y un manifiesto SHA-256 independiente. La conversión previa a WAV y el warmup
+generativo no reproducían el timbre aprobado. El muestreo queda fijado mediante
+`voice_clone.seed = 42`. Los defaults oficiales `0.9/50/1.0` produjeron una
+toma robótica reproducible para una frase de control. El perfil aprobado reduce
+`temperature` y `subtalker_temperature` a `0.65`, y usa `top_k = 30` y
+`top_p = 0.9` en ambos generadores.
+
+Qwen recibe la respuesta completa como una sola unidad prosódica. El texto sigue
+apareciendo por streaming en la interfaz, pero no se sintetiza frase por frase:
+la fragmentación hacía que una respuesta de dos frases sonara diferente al
+preview y duplicaba el trabajo. Piper conserva el streaming por frases.
+
+Prueba real desde la aplicación WPF/centro de control del 12 de octubre de 2026:
+
+- carga del worker: 23,921 s;
+- una síntesis para dos frases: 62,125 s;
+- reproducción: 6,562 s;
+- turno completo: 74,703 s;
+- `sentences_spoken = 1`;
+- firma acústica redondeada idéntica al candidato 42 aprobado: RMS 0,04186,
+  pico 0,38867 y tasa de cruces 0,09961;
+- suite: 192 pruebas y 9 subpruebas aprobadas.
+
+La reproducción integrada ya no remuestrea el PCM de Qwen de 24 kHz mediante
+interpolación lineal de NumPy. Entrega la señal original a WASAPI compartido con
+`auto_convert`, de modo que el motor de audio de Windows realiza la conversión al
+formato nativo de 48 kHz del dispositivo. El 12 de octubre se verificó esta ruta
+primero con el candidato aprobado y luego con un turno hablado desde WPF; falta
+la aceptación auditiva humana de varios turnos distintos antes de declarar
+resuelta la variación de calidad.
+
+Prueba de regresión del perfil conservador del 13 de octubre de 2026:
+
+- la toma predeterminada que el usuario rechazó dio RMS `0,04364`, pico
+  `0,46875` y ZCR `0,12201`;
+- la misma frase con el perfil conservador fue aprobada como natural y dio RMS
+  `0,04042`, pico `0,34375` y ZCR `0,06033`;
+- Mark completo reprodujo después exactamente esa firma desde WPF: síntesis
+  `25,875 s`, reproducción `7,828 s`, turno total `43,016 s`.
+
+El centro de control y el runtime conversacional están además protegidos por
+mutex nominales de Windows. Los dos procesos que suelen verse por cada entorno
+virtual son el lanzador del `venv` y su intérprete hijo, no dos sintetizadores;
+el mutex impide una segunda instancia lógica real.
+
+La calidad tiene prioridad, pero la latencia todavía es inaceptable para una
+conversación fluida. FlashAttention no está instalado y no debe añadirse con un
+wheel incompatible. Una optimización futura debe mantener la misma salida
+acústica y probarse desde Mark, no solo mediante previews aislados.
+
+Instalación reproducible:
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-Qwen3TTS.ps1
+```
+
+## Backend anterior: Chatterbox LatAm
+
+Piper y Chatterbox ya no son la voz activa. Chatterbox se conserva como backend
+recuperable y sigue fallando cerrado si la muestra o el consentimiento no son válidos.
 
 Chatterbox se aisló en `.venv-chatterbox-cuda`: su stack fija NumPy 1.x y usa
 PyTorch 2.9.1+cu128, que incluye `sm_120` para la RTX 5060. No contamina el núcleo.
@@ -164,10 +244,14 @@ La aceleración posterior de la voz clonada se registra por separado en
 - audio de turnos no se persiste;
 - auditoría conserva estado, latencias, idioma/probabilidades y resultado, no la
   transcripción ni PCM;
-- Chatterbox arranca con `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`, telemetría
+- los workers de clonación arrancan con `HF_HUB_OFFLINE=1`,
+  `TRANSFORMERS_OFFLINE=1`, telemetría
   deshabilitada y todos los recursos previamente descargados;
 - no hay eco acústico avanzado, full-duplex ni barge-in natural;
+- durante una llamada, el micrófono solo se abre en la fase de escucha y se
+  libera al silenciar, colgar, cerrar la aplicación o detener el runtime;
 - una voz clonada puede sonar similar, pero no constituye identidad, autenticación
   ni autorización;
-- falta escuchar y evaluar semejanza/naturalidad antes de declarar aceptada la Fase 2.
+- Qwen3-TTS fue validado desde la aplicación con una respuesta controlada; sigue
+  pendiente la aceptación humana de varios turnos libres y reducir su latencia.
 

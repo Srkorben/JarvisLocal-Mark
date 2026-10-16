@@ -18,13 +18,16 @@ from typing import Iterator
 from ..config import Settings
 from ..database import Database
 from ..policy import PolicyEngine
+from ..process_lock import windows_singleton
 from ..projects import ProjectService
 from .catalog import build_tool_catalog
 from .modules import build_module_snapshot
 from .runtime import ProcessManager
 from .server import ControlCenterHTTPServer
+from .system_status import SystemStatusMonitor
 from .text_chat import TextChatRequestStore
 from .voice_import import VoiceReferenceImporter
+from .voice_control import VoiceControlStore
 
 
 LOGGER = logging.getLogger("jarvis_local.control_center")
@@ -114,10 +117,17 @@ def serve() -> int:
         settings = Settings.load(root / "config" / "jarvis.toml")
         tts_provider, _ = settings.effective_tts
         catalog = build_tool_catalog(
-            root, voice_tts_provider=tts_provider, piper_voice_path=settings.tts_voice_path
+            root,
+            voice_tts_provider=tts_provider,
+            piper_voice_path=settings.tts_voice_path,
+            voice_reference_path=settings.tts_clone_reference_path,
+            voice_reference_text_path=settings.tts_clone_reference_text_path,
+            voice_consent_path=settings.tts_clone_consent_path,
         )
         manager = ProcessManager(catalog)
+        system_monitor = SystemStatusMonitor(settings, manager)
         text_chat = TextChatRequestStore()
+        voice_control = VoiceControlStore()
         database = Database(settings.database_path)
         project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
             "JarvisLocal", settings.project_dir
@@ -140,6 +150,8 @@ def serve() -> int:
             root,
             voice_importer=voice_importer.import_base64,
             text_chat=text_chat,
+            voice_control=voice_control,
+            system_monitor=system_monitor,
         )
         endpoint = {
             "pid": os.getpid(),
@@ -154,6 +166,7 @@ def serve() -> int:
             server.serve_forever(poll_interval=0.25)
         finally:
             text_chat.close()
+            voice_control.close()
             manager.stop_all()
             server.server_close()
             current = read_endpoint(root)
@@ -190,6 +203,8 @@ def _bind_available_server(
     root: Path | None = None,
     voice_importer=None,
     text_chat: TextChatRequestStore | None = None,
+    voice_control: VoiceControlStore | None = None,
+    system_monitor: SystemStatusMonitor | None = None,
 ) -> ControlCenterHTTPServer:
     project = root or project_root()
     last_error: OSError | None = None
@@ -204,6 +219,8 @@ def _bind_available_server(
                 module_snapshot=lambda: build_module_snapshot(project),
                 voice_importer=voice_importer,
                 text_chat=text_chat,
+                voice_control=voice_control,
+                system_monitor=system_monitor,
                 version="Mark Scout · Desktop Alpha",
             )
         except OSError as exc:
@@ -297,6 +314,13 @@ def _launch_lock(path: Path, *, timeout_seconds: float) -> Iterator[None]:
 
 @contextlib.contextmanager
 def _server_lock(path: Path) -> Iterator[bool]:
+    if os.name == "nt":
+        # Un nombre fijo impide que la instalación principal y una copia de
+        # desarrollo controlen el mismo micrófono/altavoz simultáneamente.
+        with windows_singleton(r"Local\MarkScout.ControlCenter") as acquired:
+            yield acquired
+        return
+
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
     if path.stat().st_size == 0:
@@ -304,23 +328,7 @@ def _server_lock(path: Path) -> Iterator[bool]:
         handle.flush()
     acquired = False
     try:
-        if os.name == "nt":
-            import msvcrt
-
-            try:
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-                acquired = True
-            except OSError:
-                acquired = False
-        else:
-            acquired = True
+        acquired = True
         yield acquired
     finally:
-        if acquired and os.name == "nt":
-            import msvcrt
-
-            handle.seek(0)
-            with contextlib.suppress(OSError):
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
         handle.close()

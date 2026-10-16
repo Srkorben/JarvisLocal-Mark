@@ -14,6 +14,7 @@ from unittest.mock import patch
 from jarvis_local.control_center.catalog import ToolSpec, build_tool_catalog
 from jarvis_local.control_center import launcher as launcher_module
 from jarvis_local.control_center.presence import VoicePresenceStore
+from jarvis_local.control_center.voice_control import VoiceControlError, VoiceControlStore
 from jarvis_local.control_center.modules import build_module_snapshot
 from jarvis_local.control_center.runtime import (
     ConfirmationRequiredError,
@@ -21,6 +22,8 @@ from jarvis_local.control_center.runtime import (
     ToolConflictError,
 )
 from jarvis_local.control_center.server import ControlCenterHTTPServer
+from jarvis_local.control_center.system_status import SystemStatusMonitor
+from tests.helpers import make_settings
 
 
 class FakeProcess:
@@ -147,6 +150,28 @@ class CatalogTests(TestCase):
             self.assertFalse(chat.visible_console)
             self.assertIn("core_runtime", chat.exclusive_groups)
 
+    def test_xtts_voice_requires_only_xtts_clone_assets(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            catalog = build_tool_catalog(root, voice_tts_provider="xtts")
+            missing = catalog["voice"].missing_requirements()
+            self.assertIn("Entorno aislado XTTS-v2", missing)
+            self.assertIn("Modelo XTTS-v2", missing)
+
+    def test_qwen_voice_requires_model_reference_text_and_consent(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            catalog = build_tool_catalog(root, voice_tts_provider="qwen3_tts")
+
+            missing = catalog["voice"].missing_requirements()
+
+            self.assertIn("Entorno aislado Qwen3-TTS", missing)
+            self.assertIn("Modelo Qwen3-TTS Base 0.6B", missing)
+            self.assertIn("Transcripción local de la muestra", missing)
+            self.assertIn("Muestra de voz autorizada", missing)
+            self.assertNotIn("Entorno aislado Chatterbox", missing)
+            self.assertNotIn("Modelo Chatterbox LatAm", missing)
+
 
 class ProcessManagerTests(TestCase):
     def test_confirmation_duplicate_conflict_and_stop(self) -> None:
@@ -210,8 +235,38 @@ class PresenceTests(TestCase):
         )
         self.assertEqual(updated["revision"], 1)
         self.assertEqual(updated["response"], "respuesta")
+        call = store.update(
+            {
+                "state": "listening",
+                "transcript": "",
+                "response": "",
+                "error": "",
+                "voice_mode": "call",
+                "call_active": True,
+                "muted": False,
+            }
+        )
+        self.assertTrue(call["call_active"])
+        self.assertEqual(call["voice_mode"], "call")
         with self.assertRaises(ValueError):
             store.update({"state": "idle", "allowed_tools": "all"})
+
+
+class VoiceControlTests(TestCase):
+    def test_commands_are_typed_ephemeral_and_ordered(self) -> None:
+        store = VoiceControlStore()
+        start = store.submit("start_recording")
+        finish = store.submit("finish_recording")
+        self.assertNotEqual(start["id"], finish["id"])
+        self.assertEqual(store.take()["action"], "start_recording")
+        self.assertEqual(store.take()["action"], "finish_recording")
+        self.assertIsNone(store.take())
+        self.assertEqual(store.submit("start_call")["action"], "start_call")
+        self.assertEqual(store.submit("mute")["action"], "mute")
+        self.assertEqual(store.submit("unmute")["action"], "unmute")
+        self.assertEqual(store.submit("end_call")["action"], "end_call")
+        with self.assertRaises(VoiceControlError):
+            store.submit("grant_all_permissions")
 
 
 class ModuleSnapshotTests(TestCase):
@@ -240,19 +295,37 @@ class HTTPTests(TestCase):
         root = Path(self.temp.name)
         self.fake = FakePopen()
         manager = ProcessManager(
-            {"sample": make_test_tool(root, "sample", confirmation=True)},
+            {
+                "sample": make_test_tool(root, "sample", confirmation=True),
+                "voice": make_test_tool(root, "voice"),
+            },
             popen_factory=self.fake,
             process_terminator=lambda process: process.terminate(),
             cooldown_seconds=0,
         )
         icon = root / "icon.ico"
         icon.write_bytes(b"\x00\x00\x01\x00")
+        self.system_monitor = SystemStatusMonitor(
+            make_settings(root, model="fixture-model"),
+            manager,
+            hardware_reader=lambda: {
+                "cpu": {"available": True, "percent": 25.0},
+                "ram": {
+                    "available": True,
+                    "used_mib": 1024,
+                    "total_mib": 4096,
+                    "percent": 25.0,
+                },
+                "gpu": {"available": False, "reason": "nvidia_smi_missing"},
+            },
+        )
         self.server = ControlCenterHTTPServer(
             ("127.0.0.1", 0),
             manager,
             auth_token="secret-token",
             csrf_token="csrf-token",
             icon_path=icon,
+            system_monitor=self.system_monitor,
             module_snapshot=lambda: {
                 "identity": {"display_name": "Mark Scout", "short_name": "Mark"},
                 "modules": [{"id": "model", "label": "Modelo"}],
@@ -308,7 +381,19 @@ class HTTPTests(TestCase):
         status, headers, body = self.request("GET", "/", headers=self.authenticated_headers())
         self.assertEqual(status, 200)
         self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
-        self.assertIn(b"Iniciar voz", body)
+        self.assertIn(b'id="voiceMic"', body)
+        self.assertIn(b'id="callStart"', body)
+        self.assertIn(b'id="voiceModeCall"', body)
+        self.assertIn(b'id="voiceModePtt"', body)
+        self.assertIn(b'id="voiceHangup"', body)
+        self.assertIn(b'id="voiceMute"', body)
+        self.assertIn(b'id="voiceCancel"', body)
+        self.assertIn("Mantén para hablar".encode(), body)
+        self.assertIn(b'pointercancel', body)
+        self.assertIn(b'lostpointercapture', body)
+        self.assertIn(b'visibilitychange', body)
+        self.assertNotIn(b"Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>M", body)
+        self.assertNotIn(b"Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Pause", body)
         self.assertIn(b"Mark Scout", body)
         self.assertIn(b'data-module="interface"', body)
         self.assertIn(b"mark.visualQuality", body)
@@ -318,6 +403,18 @@ class HTTPTests(TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["identity"]["short_name"], "Mark")
+
+        status, _, _ = self.request("GET", "/api/system")
+        self.assertEqual(status, 401)
+        status, headers, body = self.request(
+            "GET", "/api/system", headers=self.authenticated_headers()
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        system = json.loads(body)["system"]
+        self.assertEqual(system["model"]["name"], "fixture-model")
+        self.assertEqual(system["cpu"]["percent"], 25.0)
+        self.assertNotIn("project_dir", json.dumps(system))
 
         status, _, _ = self.request(
             "POST", "/api/tools/sample/start", headers=self.authenticated_headers(), body=b"{}"
@@ -443,6 +540,62 @@ class HTTPTests(TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(json.loads(body)["error"]["code"], "invalid_presence")
 
+    def test_microphone_control_requires_csrf_and_rejects_authority(self) -> None:
+        valid = json.dumps({"action": "start_recording"}).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=valid,
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"]["code"], "voice_runtime_inactive")
+
+        self.server.manager.start("voice")
+        status, _, _ = self.request(
+            "POST", "/api/voice/control", headers=self.authenticated_headers(), body=valid
+        )
+        self.assertEqual(status, 403)
+
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=valid,
+        )
+        self.assertEqual(status, 202)
+        self.assertEqual(json.loads(body)["result"]["outcome"], "queued")
+
+        status, _, body = self.request(
+            "GET",
+            "/api/voice/control/next?wait=0",
+            headers={"Authorization": "Bearer secret-token"},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["command"]["action"], "start_recording")
+
+        malicious = json.dumps(
+            {"action": "start_recording", "policy": "allow_all"}
+        ).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=malicious,
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(json.loads(body)["error"]["code"], "invalid_request")
+
+        invalid = json.dumps({"action": "run_shell"}).encode("utf-8")
+        status, _, body = self.request(
+            "POST",
+            "/api/voice/control",
+            headers=self.authenticated_headers(csrf=True),
+            body=invalid,
+        )
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"]["code"], "invalid_voice_action")
+
     def test_presence_read_accepts_internal_bearer_for_3d_client(self) -> None:
         status, _, body = self.request(
             "GET",
@@ -486,6 +639,11 @@ class ChatRoutingHTTPTests(TestCase):
             auth_token="secret-token",
             csrf_token="csrf-token",
             icon_path=icon,
+            system_monitor=SystemStatusMonitor(
+                make_settings(root),
+                self.manager,
+                hardware_reader=lambda: {},
+            ),
             version="test",
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -542,6 +700,93 @@ class ChatRoutingHTTPTests(TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["result"]["outcome"], "started")
         self.assertEqual(self.running(), {"voice"})
+
+
+class TextChatStoreTests(TestCase):
+    def test_cancel_discards_pending_and_wakes_the_runtime(self) -> None:
+        from jarvis_local.control_center.text_chat import TextChatRequestStore
+
+        store = TextChatRequestStore()
+        store.submit("hola", False)
+        received: list[object] = []
+        self.assertEqual(store.cancel()["discarded"], 1)
+        waiter = threading.Thread(target=lambda: received.append(store.take(wait_seconds=5)))
+        waiter.start()
+        waiter.join(timeout=2)
+        self.assertEqual(received, [{"cancel": True}])
+        self.assertIsNone(store.take(wait_seconds=0))
+
+
+class ChatPanelHTTPTests(ChatRoutingHTTPTests):
+    def test_dashboard_includes_the_chat_panel(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/", headers={"Cookie": "jarvis_cc=secret-token"})
+        response = connection.getresponse()
+        body = response.read()
+        connection.close()
+        self.assertEqual(response.status, 200)
+        for marker in (
+            b'id="chatInput"', b'id="chatCancel"', b"/api/chat/cancel",
+            b"chatPresence", b'id="corePanel"', b"/api/system",
+        ):
+            self.assertIn(marker, body)
+        self.assertNotIn(b'style="', body)
+
+    def test_chat_renders_markdown_without_html_injection(self) -> None:
+        from jarvis_local.control_center.web import render_dashboard
+
+        page = render_dashboard(csrf_token="c", nonce="n", version="v")
+        chat = page[page.index("// --- Chat escrito"):page.index("const canvas=")]
+        # El chat construye nodos con textContent; innerHTML solo aparece en
+        # el comentario que lo prohíbe.
+        self.assertEqual(chat.count("innerHTML"), 1)
+        for marker in ("function mdRender", 'createElement("strong")', 'createElement("pre")',
+                       "p.revision<=turn.minRevision", 'id="chatWide"'):
+            self.assertIn(marker, page if marker.startswith("id=") else chat)
+
+    def test_chat_keyboard_cancel_and_follow_controls(self) -> None:
+        from jarvis_local.control_center.web import render_dashboard
+
+        page = render_dashboard(csrf_token="c", nonce="n", version="v")
+        for marker in ('id="chatJump"', 'event.key==="Escape"&&turn', 'setAttribute("aria-busy","true")',
+                       'removeAttribute("aria-busy")'):
+            self.assertIn(marker, page)
+
+    def test_chat_history_lives_in_memory_and_needs_session(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/api/chat/history")
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 401)
+        status, _ = self.post("/api/chat", {"text": "hola", "speak": False})
+        self.assertEqual(status, 202)
+        self.server.chat_history.observe({"state": "processing", "transcript": "hola", "response": "Hola."})
+        self.server.chat_history.observe({"state": "idle", "transcript": "hola", "response": "Hola."})
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request("GET", "/api/chat/history", headers={"Cookie": "jarvis_cc=secret-token"})
+        response = connection.getresponse()
+        turns = json.loads(response.read())["turns"]
+        connection.close()
+        self.assertEqual([(t["user"], t["assistant"], t["outcome"]) for t in turns], [("hola", "Hola.", "done")])
+        status, body = self.post("/api/chat/history/clear", {})
+        self.assertEqual((status, body["result"]["removed"]), (200, 1))
+        self.assertEqual(self.server.chat_history.snapshot(), [])
+
+    def test_cancel_requires_csrf_and_reaches_the_runtime_queue(self) -> None:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request(
+            "POST", "/api/chat/cancel", body=b"{}",
+            headers={"Cookie": "jarvis_cc=secret-token", "Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        response.read()
+        connection.close()
+        self.assertEqual(response.status, 403)
+        status, body = self.post("/api/chat/cancel", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["result"]["outcome"], "cancel_requested")
+        self.assertEqual(self.server.text_chat.take(wait_seconds=0), {"cancel": True})
 
 
 class StatusCLITests(TestCase):

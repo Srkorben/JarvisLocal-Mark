@@ -1,6 +1,6 @@
 # Estado del proyecto
 
-Última actualización: 2026-10-09
+Última actualización: 2026-10-12
 
 ## Resumen
 
@@ -12,7 +12,7 @@ ejecutable hasta una migración separada.
 |---|---|---|
 | 0 — Esqueleto seguro | **Completada** | política, auditoría, cancelación y herramientas tipadas |
 | 1 — Conversación local por texto | **Completada** | 38 pruebas, diagnóstico, smoke tests y benchmark real |
-| 2 — Voz push-to-talk | **Implementada; aceptación pendiente** | 108 pruebas + 3 subtests + E2E; Chatterbox CUDA fluido, falta evaluar naturalidad |
+| 2 — Voz local | **Implementada; aceptación acústica pendiente** | 173 pruebas + 9 subtests; llamada continua semidúplex y PTT desde UI |
 | 3 — Memoria de proyectos/RAG | **Completada** | 53 pruebas totales, índice real, 4/4 benchmark RAG |
 | 4 — Herramientas deterministas | **Completada** | 10 tools nuevas, smoke real y E2E con LLM |
 | 5 — Acceso permanente | **Parcial** | aplicación WPF/WebView2 y acceso `.exe`; faltan bandeja, wake word e inicio de sesión |
@@ -21,7 +21,7 @@ ejecutable hasta una migración separada.
 | 8 — Endurecimiento | Continuo | controles base presentes; falta endurecimiento integral |
 
 Incremento posterior a Fase 4: **evaluación de CORE y decisiones temporales,
-completado**. No constituye una fase nueva y no cambia la prioridad de voz PTT.
+completado**. No constituye una fase nueva.
 
 Incremento de acceso: **centro de control local completado**. Consolida los nueve
 accesos históricos de JarvisLocal en un único `Mark Scout.lnk`. Los accesos de
@@ -58,17 +58,40 @@ separados hasta completar sus pruebas.
   permanece bloqueado por falta de licencia activa (código 198);
 - Epic Games Launcher actualizado; Unreal 5.8 requiere autenticación del usuario.
 
+Incremento Ref 2.0: **monitor y panel Núcleo implementados en la rama de UI**.
+El endpoint autenticado `/api/system` compone los estados de texto y voz con la
+presencia efímera y mide CPU, RAM, GPU y VRAM sin cargar modelos adicionales.
+Las lecturas de hardware tienen caché y fallos explícitos; el panel conserva los
+controles del catálogo cerrado y la exclusión entre runtimes. Se validó en
+Chromium sobre Windows, incluyendo transiciones, Escape y no duplicación. La
+validación final dentro de WPF/WebView2 permanece pendiente y esta rama todavía
+no está instalada en la carpeta principal.
+
 ## Fase 2 implementada
 
 - contratos `STTProvider`, `TTSProvider`, recorder y player sustituibles;
 - máquina de estados semidúplex con exclusión de turnos concurrentes;
 - WASAPI compartido, selección de dispositivo y resampling explícito;
-- hotkeys globales configurables `Ctrl+Alt+M` y `Ctrl+Alt+Pause`;
+- llamada semidúplex automática: escucha, detecta el turno, responde y vuelve a escuchar;
+- modo alternativo mantener-pulsado-y-hablar, sin atajos globales;
+- canal efímero tipado y autenticado UI→runtime para llamada, silencio, PTT y cancelación;
+- cancelación, silencio y fin de llamada mediante controles visibles de la UI;
 - faster-whisper small multilingüe, CPU INT8, Silero VAD y hotwords;
 - transcripción visible, detección de silencio/ambigüedad y Unicode seguro;
 - mismo `Orchestrator`, sesión, `project_id`, memoria, política y tools que texto;
 - Piper validado como fallback; su voz fue rechazada por el usuario;
 - Chatterbox LatAm instalado en proceso/venv separado, CUDA y offline;
+- Qwen3-TTS Base 0.6B integrado como proveedor activo aislado, CUDA y offline;
+- referencia MP3 autorizada de 20,01 s, transcripción explícita y manifiesto
+  SHA-256; Qwen3-TTS fue aceptado tras rechazar Chatterbox y XTTS por sonido
+  robotizado o interferencias;
+- el runtime usa la fuente MP3 original y no ejecuta warmup generativo: ambos
+  cambios igualan la ruta de Mark con los previews aprobados;
+- perfil de muestreo Qwen conservador aprobado (`temperature 0.65`, `top_k 30`,
+  `top_p 0.9` para talker y subtalker); la aplicación reprodujo la misma firma
+  acústica que la toma natural de control;
+- corregida la DACL protegida de los artefactos de voz; futuras importaciones
+  restauran la herencia ACL o fallan cerrado;
 - reserva de VRAM en orden voz→LLM y priming CUDA antes de declarar estado listo;
 - enrolamiento de voz propia con consentimiento local y SHA-256;
 - importación desde UI de audio autorizado de 15–30 s, ocho formatos, respaldo y auditoría;
@@ -76,9 +99,15 @@ separados hasta completar sus pruebas.
 - cancelación durante captura, STT, LLM, playback y worker de clonación;
 - auditoría de metadatos/latencia sin almacenar audio ni transcripción.
 
-La aceptación no se cierra todavía: la muestra ya fue grabada y la síntesis es
-funcional, pero el usuario debe evaluar semejanza y naturalidad. No se inició wake
-word, escucha continua, full-duplex, bandeja, UIA, Playwright ni visión.
+La selección comparativa terminó con Qwen3-TTS Base 0.6B. La misma ruta usada por
+Mark leyó el consentimiento, sintetizó y reprodujo audio por WASAPI; la suite
+suma 192 pruebas + 9 subpruebas. La aplicación entrega ahora el PCM nativo de
+24 kHz a la conversión compartida de WASAPI en vez de usar interpolación lineal
+propia, y mutex nominales impiden dos runtimes lógicos. Aún falta validar
+una llamada humana multivuelta desde WPF y mejorar la latencia sin sacrificar el
+timbre. La lógica de llamada y sus estados está probada automáticamente. No hay
+wake word, full-duplex,
+cancelación de eco, bandeja, UIA, Playwright ni visión.
 
 ## Fase 1 implementada
 

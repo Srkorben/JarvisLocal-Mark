@@ -87,7 +87,11 @@ class SpeechPipeline:
         self.player = player
         self.cancellation = cancellation
         self.on_first_audio = on_first_audio
+        self._defer_until_finish = bool(
+            getattr(tts, "prefer_complete_utterance", False)
+        )
         self._chunker = SentenceChunker()
+        self._deferred_text = ""
         self._texts: asyncio.Queue = asyncio.Queue()
         # Acota la síntesis adelantada para no ocupar memoria ni GPU sin necesidad.
         self._audio: asyncio.Queue = asyncio.Queue(maxsize=max_buffered_audio)
@@ -108,14 +112,23 @@ class SpeechPipeline:
         if not delta or self.cancellation.is_cancelled:
             return
         self._fed_text += delta
+        if self._defer_until_finish:
+            self._deferred_text += delta
+            return
         for sentence in self._chunker.feed(delta):
             self._enqueue(sentence)
 
     async def finish(self) -> None:
         """Pronuncia el resto y espera a que termine la reproducción."""
 
-        for sentence in self._chunker.flush():
-            self._enqueue(sentence)
+        if self._defer_until_finish:
+            complete = clean_for_speech(self._deferred_text)
+            self._deferred_text = ""
+            if complete:
+                self._enqueue(complete)
+        else:
+            for sentence in self._chunker.flush():
+                self._enqueue(sentence)
         if not self._tasks:
             return
         await self._texts.put(_SENTINEL)

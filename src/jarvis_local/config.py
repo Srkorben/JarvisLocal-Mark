@@ -56,12 +56,14 @@ class Settings(BaseModel):
     )
     audio_input_device: str = "wasapi_default"
     audio_output_device: str = "wasapi_default"
-    audio_ptt_hotkey: str = "ctrl+alt+j"
-    audio_cancel_hotkey: str = "ctrl+alt+pause"
     audio_sample_rate: int = Field(default=16000, ge=8000, le=48000)
     audio_min_record_seconds: float = Field(default=0.25, ge=0.05, le=5)
     audio_max_record_seconds: float = Field(default=30.0, ge=1, le=120)
     audio_min_rms: float = Field(default=0.003, ge=0, le=1)
+    audio_call_speech_rms: float = Field(default=0.008, ge=0.0001, le=1)
+    audio_call_voice_start_seconds: float = Field(default=0.12, ge=0.02, le=2)
+    audio_call_end_silence_seconds: float = Field(default=0.8, ge=0.2, le=5)
+    audio_call_rollover_seconds: float = Field(default=8.0, ge=2, le=60)
     stt_provider: str = "faster_whisper"
     stt_model_path: Path | None = None
     stt_language: str = "es"
@@ -83,15 +85,22 @@ class Settings(BaseModel):
     tts_clone_model_path: Path | None = None
     tts_clone_model_file: str = "t3_es_mx_latam.safetensors"
     tts_clone_reference_path: Path | None = None
+    tts_clone_reference_text_path: Path | None = None
     tts_clone_consent_path: Path | None = None
     tts_clone_device: str = "cpu"
-    # Chatterbox en CUDA comparte los 8 GB de VRAM con el LLM y lo frena
-    # hasta 10 veces; solo se carga en la GPU con autorización explícita.
+    # Los motores de clonación CUDA comparten los 8 GB de VRAM con el LLM;
+    # solo se cargan en la GPU con autorización explícita.
     tts_clone_allow_gpu: bool = False
     tts_clone_timeout_seconds: float = Field(default=180, gt=0, le=900)
     tts_clone_exaggeration: float = Field(default=0.5, ge=0.25, le=2.0)
     tts_clone_cfg_weight: float = Field(default=0.4, ge=0.0, le=1.0)
     tts_clone_temperature: float = Field(default=0.8, ge=0.05, le=2.0)
+    tts_clone_top_k: int = Field(default=30, ge=1, le=200)
+    tts_clone_top_p: float = Field(default=0.9, ge=0.05, le=1.0)
+    tts_clone_subtalker_temperature: float = Field(default=0.65, ge=0.05, le=2.0)
+    tts_clone_subtalker_top_k: int = Field(default=30, ge=1, le=200)
+    tts_clone_subtalker_top_p: float = Field(default=0.9, ge=0.05, le=1.0)
+    tts_clone_seed: int = Field(default=42, ge=0, le=2_147_483_647)
     data_dir: Path
     database_path: Path
     allowed_roots: tuple[Path, ...]
@@ -148,7 +157,7 @@ class Settings(BaseModel):
     @field_validator("tts_provider")
     @classmethod
     def supported_tts_backend(cls, value: str) -> str:
-        if value not in {"piper", "chatterbox"}:
+        if value not in {"piper", "chatterbox", "xtts", "qwen3_tts"}:
             raise ValueError("Proveedor TTS no soportado.")
         return value
 
@@ -157,7 +166,7 @@ class Settings(BaseModel):
         """Chatterbox pide CUDA sin que se haya autorizado compartir la GPU."""
 
         return (
-            self.tts_provider == "chatterbox"
+            self.tts_provider in {"chatterbox", "xtts", "qwen3_tts"}
             and self.tts_clone_device == "cuda"
             and not self.tts_clone_allow_gpu
         )
@@ -166,8 +175,8 @@ class Settings(BaseModel):
     def effective_tts(self) -> tuple[str, str]:
         """Proveedor y dispositivo de síntesis que se usarán realmente."""
 
-        if self.tts_provider == "chatterbox" and not self.tts_gpu_blocked:
-            return "chatterbox", self.tts_clone_device
+        if self.tts_provider in {"chatterbox", "xtts", "qwen3_tts"} and not self.tts_gpu_blocked:
+            return self.tts_provider, self.tts_clone_device
         return "piper", "cpu"
 
     @field_validator("tts_clone_device")
@@ -324,12 +333,20 @@ class Settings(BaseModel):
             ),
             audio_input_device=str(audio.get("input_device", "wasapi_default")),
             audio_output_device=str(audio.get("output_device", "wasapi_default")),
-            audio_ptt_hotkey=str(audio.get("ptt_hotkey", "ctrl+alt+j")),
-            audio_cancel_hotkey=str(audio.get("cancel_hotkey", "ctrl+alt+pause")),
             audio_sample_rate=int(audio.get("sample_rate", 16000)),
             audio_min_record_seconds=float(audio.get("min_record_seconds", 0.25)),
             audio_max_record_seconds=float(audio.get("max_record_seconds", 30.0)),
             audio_min_rms=float(audio.get("min_rms", 0.003)),
+            audio_call_speech_rms=float(audio.get("call_speech_rms", 0.008)),
+            audio_call_voice_start_seconds=float(
+                audio.get("call_voice_start_seconds", 0.12)
+            ),
+            audio_call_end_silence_seconds=float(
+                audio.get("call_end_silence_seconds", 0.8)
+            ),
+            audio_call_rollover_seconds=float(
+                audio.get("call_rollover_seconds", 8.0)
+            ),
             stt_provider=str(stt.get("provider", "faster_whisper")),
             stt_model_path=_optional_project_path(
                 project_dir, stt.get("model_path")
@@ -370,6 +387,12 @@ class Settings(BaseModel):
                 project_dir,
                 voice_clone.get("reference_path", "data/voices/user/reference.wav"),
             ),
+            tts_clone_reference_text_path=_optional_project_path(
+                project_dir,
+                voice_clone.get(
+                    "reference_text_path", "data/voices/user/reference.txt"
+                ),
+            ),
             tts_clone_consent_path=_optional_project_path(
                 project_dir,
                 voice_clone.get("consent_path", "data/voices/user/consent.json"),
@@ -384,6 +407,18 @@ class Settings(BaseModel):
             ),
             tts_clone_cfg_weight=float(voice_clone.get("cfg_weight", 0.4)),
             tts_clone_temperature=float(voice_clone.get("temperature", 0.8)),
+            tts_clone_top_k=int(voice_clone.get("top_k", 30)),
+            tts_clone_top_p=float(voice_clone.get("top_p", 0.9)),
+            tts_clone_subtalker_temperature=float(
+                voice_clone.get("subtalker_temperature", 0.65)
+            ),
+            tts_clone_subtalker_top_k=int(
+                voice_clone.get("subtalker_top_k", 30)
+            ),
+            tts_clone_subtalker_top_p=float(
+                voice_clone.get("subtalker_top_p", 0.9)
+            ),
+            tts_clone_seed=int(voice_clone.get("seed", 42)),
             data_dir=data_dir.resolve(),
             database_path=database_path.resolve(),
             allowed_roots=roots,
