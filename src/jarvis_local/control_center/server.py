@@ -22,6 +22,8 @@ from .web import render_dashboard
 LOGGER = logging.getLogger("jarvis_local.control_center")
 MAX_BODY_BYTES = 4096
 MAX_VOICE_IMPORT_BODY_BYTES = 34 * 1024 * 1024
+# Procesos que publican la presencia de Mark y atienden el chat escrito.
+_CONVERSATION_RUNTIMES = frozenset({"voice", "chat_runtime"})
 
 
 class ControlCenterHTTPServer(ThreadingHTTPServer):
@@ -201,7 +203,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 speak = payload.get("speak", True)
                 request = self.server.text_chat.submit(text, speak)
                 try:
-                    runtime = self.server.manager.start("voice")
+                    runtime = self._ensure_chat_runtime()
                 except Exception:
                     self.server.text_chat.discard(request["id"])
                     raise
@@ -301,16 +303,20 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         tool_id, action = parts[2], parts[3]
         try:
             if action == "start":
+                if tool_id == "voice" and self._tool_running("chat_runtime"):
+                    # La voz atiende también el chat escrito: el runtime de
+                    # texto cede el LLM para no cargar dos copias del modelo.
+                    self.server.manager.stop("chat_runtime")
                 result = self.server.manager.start(
                     tool_id, confirmed=payload.get("confirmed") is True
                 )
-                if tool_id == "voice":
+                if tool_id in _CONVERSATION_RUNTIMES:
                     self.server.presence.update(
                         {"state": "loading", "transcript": "", "response": "", "error": ""}
                     )
             else:
                 result = self.server.manager.stop(tool_id)
-                if tool_id == "voice":
+                if tool_id in _CONVERSATION_RUNTIMES:
                     self.server.presence.update(
                         {"state": "offline", "transcript": "", "response": "", "error": ""}
                     )
@@ -318,6 +324,23 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self._json(exc.http_status, {"error": exc.as_dict()})
             return
         self._json(HTTPStatus.OK, {"result": result})
+
+    def _tool_running(self, tool_id: str) -> bool:
+        return any(
+            item["id"] == tool_id and item["status"] == "running"
+            for item in self.server.manager.list_status()
+        )
+
+    def _ensure_chat_runtime(self) -> dict[str, object]:
+        """Elige quién responde al chat escrito sin cargar audio innecesario.
+
+        Si la conversación por voz ya está activa, ella consume la cola. Si no,
+        se inicia el runtime de texto, que solo carga el LLM.
+        """
+
+        if self._tool_running("voice"):
+            return {"outcome": "already_running", "tool_id": "voice"}
+        return self.server.manager.start("chat_runtime")
 
     def _read_json(
         self,

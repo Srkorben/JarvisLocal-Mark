@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import re
 import subprocess
@@ -32,6 +33,7 @@ from .models import (
 # worker defectuoso no pueda hacer crecer la memoria del núcleo sin control.
 _CHATTERBOX_IPC_LIMIT_BYTES = 32 * 1024 * 1024
 _CHATTERBOX_MAX_PCM_BYTES = 24 * 1024 * 1024
+LOGGER = logging.getLogger("jarvis_local.audio")
 
 
 class FasterWhisperSTTProvider(STTProvider):
@@ -549,6 +551,13 @@ def create_stt_provider(settings: Settings) -> STTProvider:
 
 
 def create_tts_provider(settings: Settings) -> TTSProvider:
+    if settings.tts_gpu_blocked:
+        # La VRAM se reserva para el LLM: sin voice_clone.allow_gpu, la voz
+        # ligera en CPU sustituye a Chatterbox CUDA en lugar de cargarlo.
+        LOGGER.warning(
+            "Chatterbox en CUDA requiere voice_clone.allow_gpu = true; se usa Piper en CPU."
+        )
+        return PiperTTSProvider(settings)
     if settings.tts_provider == "piper":
         return PiperTTSProvider(settings)
     if settings.tts_provider == "chatterbox":

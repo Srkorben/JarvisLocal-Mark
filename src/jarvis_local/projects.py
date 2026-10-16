@@ -75,11 +75,15 @@ class ProjectService:
         self.policy.validate_path(project.root_path)
         return project
 
-    def require_permission(self, project: ProjectRecord, permission: str) -> None:
+    @staticmethod
+    def has_permission(project: ProjectRecord, permission: str) -> bool:
         # Los proyectos migrados desde Fase 0 no tenían mapa explícito; las tres
         # capacidades de lectura conservan el comportamiento previo.
         default = permission in {"read", "index", "memory"}
-        if not bool(project.permissions.get(permission, default)):
+        return bool(project.permissions.get(permission, default))
+
+    def require_permission(self, project: ProjectRecord, permission: str) -> None:
+        if not self.has_permission(project, permission):
             raise PermissionError(
                 f"El proyecto {project.name} no autoriza la capacidad {permission!r}."
             )

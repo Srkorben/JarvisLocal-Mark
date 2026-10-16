@@ -9,6 +9,7 @@ from pathlib import Path
 from shutil import copyfile
 from tempfile import TemporaryDirectory
 from unittest import TestCase
+from unittest.mock import patch
 
 from jarvis_local.control_center.catalog import ToolSpec, build_tool_catalog
 from jarvis_local.control_center import launcher as launcher_module
@@ -74,8 +75,14 @@ class CatalogTests(TestCase):
         # cambiar de resultado cuando el usuario enrola o elimina su voz real.
         with TemporaryDirectory() as directory:
             root = Path(directory).resolve()
-            catalog = build_tool_catalog(root)
-            self.assertEqual(len(catalog), 10)
+            platform_executable = root / "platform-tool.exe"
+            platform_executable.touch()
+            with patch(
+                "jarvis_local.control_center.catalog._windows_executable",
+                return_value=platform_executable,
+            ):
+                catalog = build_tool_catalog(root)
+            self.assertEqual(len(catalog), 11)
             self.assertEqual(
                 {item.source for item in catalog.values()},
                 {
@@ -89,11 +96,12 @@ class CatalogTests(TestCase):
                     "JarvisLocal - Preparar clonación de voz.lnk",
                     "JarvisLocal - Preparar modelos de audio.lnk",
                     "Integración Mark Scout / Godot 4.7.2",
+                    "Centro de control — chat escrito",
                 },
             )
             for item in catalog.values():
                 self.assertEqual(item.working_directory, root)
-                if item.id != "voice":
+                if item.id not in {"voice", "chat_runtime"}:
                     self.assertTrue(item.target.is_file())
             self.assertIn(
                 "Muestra de voz propia enrolada",
@@ -115,6 +123,29 @@ class CatalogTests(TestCase):
             )
             self.assertFalse(catalog["voice"].visible_console)
             self.assertNotIn("-NoExit", catalog["voice"].arguments)
+
+
+    def test_piper_voice_and_text_runtime_do_not_require_chatterbox(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            catalog = build_tool_catalog(root, voice_tts_provider="piper")
+            voice_missing = catalog["voice"].missing_requirements()
+            self.assertIn("Voz Piper local", voice_missing)
+            self.assertIn("Modelo faster-whisper-small", voice_missing)
+            for chatterbox_only in (
+                "Entorno aislado Chatterbox",
+                "Modelo Chatterbox LatAm",
+                "Muestra de voz propia enrolada",
+            ):
+                self.assertNotIn(chatterbox_only, voice_missing)
+            chat = catalog["chat_runtime"]
+            self.assertEqual(
+                chat.arguments,
+                ("-m", "jarvis_local.cli", "--config", str(root / "config" / "jarvis.toml"), "--panel-chat"),
+            )
+            self.assertNotIn("Modelo faster-whisper-small", chat.missing_requirements())
+            self.assertFalse(chat.visible_console)
+            self.assertIn("core_runtime", chat.exclusive_groups)
 
 
 class ProcessManagerTests(TestCase):
@@ -428,6 +459,89 @@ class HTTPTests(TestCase):
         rendered = "\n".join(captured.output)
         self.assertIn("path=/", rendered)
         self.assertNotIn("secret-token", rendered)
+
+
+class ChatRoutingHTTPTests(TestCase):
+    """El chat escrito no debe arrancar la voz (STT, TTS y micrófono)."""
+
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.fake = FakePopen()
+        # Ambos runtimes comparten grupo exclusivo, como core_runtime.
+        self.manager = ProcessManager(
+            {
+                "voice": make_test_tool(root, "voice"),
+                "chat_runtime": make_test_tool(root, "chat_runtime"),
+            },
+            popen_factory=self.fake,
+            process_terminator=lambda process: process.terminate(),
+            cooldown_seconds=0,
+        )
+        icon = root / "icon.ico"
+        icon.write_bytes(b"\x00\x00\x01\x00")
+        self.server = ControlCenterHTTPServer(
+            ("127.0.0.1", 0),
+            self.manager,
+            auth_token="secret-token",
+            csrf_token="csrf-token",
+            icon_path=icon,
+            version="test",
+        )
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.port = self.server.server_address[1]
+
+    def tearDown(self) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join(timeout=3)
+        self.temp.cleanup()
+
+    def post(self, path: str, payload: dict) -> tuple[int, dict]:
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=3)
+        connection.request(
+            "POST",
+            path,
+            body=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Cookie": "jarvis_cc=secret-token",
+                "Origin": f"http://127.0.0.1:{self.port}",
+                "X-CSRF-Token": "csrf-token",
+                "Content-Type": "application/json",
+            },
+        )
+        response = connection.getresponse()
+        body = json.loads(response.read() or b"{}")
+        connection.close()
+        return response.status, body
+
+    def running(self) -> set[str]:
+        return {
+            item["id"] for item in self.manager.list_status() if item["status"] == "running"
+        }
+
+    def test_text_message_starts_text_runtime_not_voice(self) -> None:
+        status, body = self.post("/api/chat", {"text": "hola", "speak": False})
+        self.assertEqual(status, 202)
+        self.assertEqual(body["result"]["runtime"], "started")
+        self.assertEqual(self.running(), {"chat_runtime"})
+        self.assertEqual(self.server.presence.snapshot()["state"], "queued")
+
+    def test_active_voice_runtime_answers_text_without_second_runtime(self) -> None:
+        self.manager.start("voice")
+        status, body = self.post("/api/chat", {"text": "hola", "speak": True})
+        self.assertEqual(status, 202)
+        self.assertEqual(body["result"]["runtime"], "already_running")
+        self.assertEqual(self.running(), {"voice"})
+        self.assertEqual(len(self.fake.commands), 1)
+
+    def test_starting_voice_hands_over_from_text_runtime(self) -> None:
+        self.manager.start("chat_runtime")
+        status, body = self.post("/api/tools/voice/start", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["result"]["outcome"], "started")
+        self.assertEqual(self.running(), {"voice"})
 
 
 class StatusCLITests(TestCase):

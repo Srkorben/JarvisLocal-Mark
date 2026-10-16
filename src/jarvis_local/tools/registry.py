@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,8 +57,11 @@ class ToolRegistry:
     def names(self) -> tuple[str, ...]:
         return tuple(self._tools)
 
-    def schemas(self) -> list[dict[str, Any]]:
-        return [spec.tool_schema() for spec in self._tools.values()]
+    def schemas(self, names: Iterable[str] | None = None) -> list[dict[str, Any]]:
+        if names is None:
+            return [spec.tool_schema() for spec in self._tools.values()]
+        selected = set(names)
+        return [spec.tool_schema() for spec in self._tools.values() if spec.name in selected]
 
     def normalize_request(self, request: ActionRequest, spec: ToolSpec) -> ActionRequest:
         arguments = spec.argument_model.model_validate(request.arguments)

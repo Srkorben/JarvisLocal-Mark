@@ -111,10 +111,13 @@ def serve() -> int:
             return 0
         auth_token = secrets.token_urlsafe(36)
         csrf_token = secrets.token_urlsafe(32)
-        catalog = build_tool_catalog(root)
+        settings = Settings.load(root / "config" / "jarvis.toml")
+        tts_provider, _ = settings.effective_tts
+        catalog = build_tool_catalog(
+            root, voice_tts_provider=tts_provider, piper_voice_path=settings.tts_voice_path
+        )
         manager = ProcessManager(catalog)
         text_chat = TextChatRequestStore()
-        settings = Settings.load(root / "config" / "jarvis.toml")
         database = Database(settings.database_path)
         project = ProjectService(database, PolicyEngine(settings)).ensure_bootstrap_project(
             "JarvisLocal", settings.project_dir
