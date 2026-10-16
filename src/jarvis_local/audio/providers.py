@@ -311,6 +311,10 @@ class ChatterboxTTSProvider(TTSProvider):
         self.python = settings.tts_clone_python
         self.model_path = settings.tts_clone_model_path
         self.model_file = settings.tts_clone_model_file
+        self.s3gen_file = settings.tts_clone_s3gen_file
+        self.accent_source = settings.tts_clone_accent_source
+        self.reference_processing = settings.tts_clone_reference_processing
+        self.seed = settings.tts_clone_seed
         self.reference_path = settings.tts_clone_reference_path
         self.consent_path = settings.tts_clone_consent_path
         self.device = settings.tts_clone_device
@@ -345,7 +349,7 @@ class ChatterboxTTSProvider(TTSProvider):
             )
         model_files = (
             "ve.pt",
-            "s3gen.pt",
+            self.s3gen_file,
             "grapheme_mtl_merged_expanded_v1.json",
             self.model_file,
             "pkuseg/spacy_ontonotes/features.msgpack",
@@ -369,12 +373,20 @@ class ChatterboxTTSProvider(TTSProvider):
             str(self.model_path),
             "--model-file",
             self.model_file,
+            "--s3gen-file",
+            self.s3gen_file,
             "--reference",
             str(self.reference_path),
             "--device",
             self.device,
             "--language",
             self.language,
+            "--accent-source",
+            self.accent_source,
+            "--reference-processing",
+            self.reference_processing,
+            "--seed",
+            str(self.seed),
         ]
 
     async def warmup(self) -> None:

@@ -24,3 +24,5 @@ integrations/unity/**/Temp/
 integrations/unity/**/UserSettings/
 integrations/unity/**/obj/
 
+/.venv-qwen3-tts/
+/.venv-xtts/

@@ -9,9 +9,13 @@ BASE_REPOSITORY = "ResembleAI/chatterbox"
 BASE_REVISION = "5bb1f6ee58e50c3b8d408bc82a6d3740c2db6e18"
 LATAM_REPOSITORY = "ResembleAI/Chatterbox-Multilingual-es-mx-latam"
 LATAM_REVISION = "27e595bf2fe7be0533ca299d9afafcde08b7cca7"
+# s3gen_v3.pt es el decodificador publicado junto al T3 LatAm del Single
+# Language Pack V3 (mismo SHA-256 en ambos repositorios). s3gen.pt se conserva
+# para poder volver a la combinación anterior desde la configuración.
 BASE_FILES = (
     "ve.pt",
     "s3gen.pt",
+    "s3gen_v3.pt",
     "grapheme_mtl_merged_expanded_v1.json",
 )
 LATAM_FILES = ("t3_es_mx_latam.safetensors",)

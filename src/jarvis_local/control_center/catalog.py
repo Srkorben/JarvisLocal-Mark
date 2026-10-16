@@ -72,6 +72,7 @@ def build_tool_catalog(
         root / "data" / "voices" / "user" / "consent.json"
     )
     clone_model = root / "models" / "chatterbox-es-latam" / "t3_es_mx_latam.safetensors"
+    clone_decoder = root / "models" / "chatterbox-es-latam" / "s3gen_v3.pt"
     xtts_model = root / "models" / "xtts-v2" / "model.pth"
     qwen_tts_model = root / "models" / "qwen3-tts-12hz-0.6b-base" / "model.safetensors"
     whisper_model = root / "models" / "faster-whisper-small" / "model.bin"
@@ -155,6 +156,7 @@ def build_tool_catalog(
         tts_requirements = (
             Requirement(clone_python, "Entorno aislado Chatterbox"),
             Requirement(clone_model, "Modelo Chatterbox LatAm"),
+            Requirement(clone_decoder, "Decodificador S3Gen V3 (Preparar clonación de voz)"),
             Requirement(voice_reference, "Muestra de voz propia enrolada"),
             Requirement(voice_consent, "Consentimiento de voz ligado por SHA-256"),
         )
