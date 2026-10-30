@@ -91,10 +91,11 @@ if "%OLLAMA%" neq "ollama" if not exist "%OLLAMA%" (
     echo No se pudo instalar Ollama. Instalalo desde https://ollama.com y vuelve a ejecutar este archivo.
     goto error
 )
-rem Si el servicio de Ollama no esta corriendo, iniciarlo minimizado.
+rem Si Ollama no esta corriendo, iniciarlo oculto (sin ventana de consola).
 "%OLLAMA%" list >nul 2>nul
 if errorlevel 1 (
-    start "" /min "%OLLAMA%" serve
+    set "OLLAMA_PS=%OLLAMA%"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$exe = $env:OLLAMA_PS; if ($exe -eq 'ollama') { $exe = (Get-Command ollama).Source }; Start-Process -FilePath $exe -ArgumentList 'serve' -WindowStyle Hidden"
     timeout /t 5 /nobreak >nul
 )
 "%OLLAMA%" list 2>nul | findstr /r /v "^NAME" | findstr /r "." >nul

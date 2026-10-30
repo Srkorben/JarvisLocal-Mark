@@ -74,9 +74,11 @@ class MarkChatSession:
         if self.engine is None:
             from openjarvis.engine import get_engine
             from openjarvis.intelligence import register_builtin_models
+            from openjarvis.mark_desktop.ollama_launcher import ensure_ollama
             from openjarvis.security import setup_security
 
             register_builtin_models()
+            ensure_ollama(self.config, status)
             resolved = get_engine(self.config)
             if resolved is None:
                 raise RuntimeError(
