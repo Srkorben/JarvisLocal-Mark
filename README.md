@@ -11,36 +11,42 @@ auditoría, y **su propia voz**. Todo eso vive en `src/jarvis_local/`,
 ## Upgrade: OpenJarvis
 
 [OpenJarvis](https://github.com/open-jarvis/OpenJarvis) (Apache-2.0) está
-instalado completo en este repo (`src/openjarvis/`, `frontend/`, …) como upgrade
-de Mark, no como reemplazo:
+instalado completo en este repositorio como upgrade de Mark, no como reemplazo.
+Detalle, matriz de capacidades y verificaciones: [docs/mark/openjarvis-integracion.md](docs/mark/openjarvis-integracion.md).
 
 - **Cerebro.** El orquestador de Mark consulta el modelo a través de los motores
-  de OpenJarvis (`[llm] provider = "openjarvis"`, motor `ollama`, modelo
-  `qwen3:8b`). Mark conserva su política, presupuestos, memoria y cancelación;
-  si Ollama no está corriendo, Mark lo inicia oculto. Para volver al
-  llama-server propio: `provider = "llama_cpp"` (ver el comentario en
-  `config/jarvis.toml`).
-- **Todo OpenJarvis dentro de Mark.** El botón **OpenJarvis** del encabezado abre,
-  dentro de la misma ventana, la interfaz completa de OpenJarvis: chat, agentes,
-  Deep Research, skills, fuentes de datos, canales, dashboard, logs y ajustes.
-  Se sirve solo en `127.0.0.1:8765`, sin login, y solo Mark puede incrustarla.
-  Se inicia y se detiene con Mark (también desde **Sistemas → OpenJarvis**).
-- **La voz de Mark en OpenJarvis.** El backend TTS `mark_voice` reutiliza la voz
-  ya enrolada de Mark (`.venv-qwen3-tts`, `models\qwen3-tts-…`,
-  `data\voices\user\`) y es la voz predeterminada de OpenJarvis.
-- **Siempre Mark.** El prompt de sistema, la persona
-  (`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
-  `jarvis`) identifican al asistente como Mark, en español.
+  de OpenJarvis (`[llm] provider = "openjarvis"`, Ollama, `qwen3:8b`). La política,
+  los presupuestos, la memoria y la auditoría siguen siendo de Mark. Para volver al
+  llama-server propio: `provider = "llama_cpp"` (ver `config/jarvis.toml`).
+- **Capacidades de Mark.** El botón del encabezado abre, dentro de la misma
+  ventana, la interfaz de OpenJarvis: agentes, Deep Research, skills, memoria,
+  conectores, automatizaciones, dashboard, logs y ajustes. Se sirve solo en
+  `127.0.0.1:8765`, sin login, con hogar propio en `data\openjarvis`.
+- **La política de Mark manda.** Los agentes de OpenJarvis heredan las
+  restricciones de Mark: leen solo en `allowed_roots` y no escriben, no ejecutan
+  código, no salen a la red ni envían por canales salvo que `config/jarvis.toml`
+  lo permita.
+- **Voz y GPU.** OpenJarvis usa la voz enrolada de Mark (`mark_voice`). Ambos
+  chats usan el mismo contexto de Ollama, y la voz en CUDA se carga antes que el
+  modelo.
+- **Siempre Mark.** Prompt, persona, comando `mark` y los textos de la interfaz
+  que nombran al asistente dicen Mark.
+- **Actualizar OpenJarvis:** `python scripts/update_openjarvis.py`.
 
 ## Instalar o actualizar (Windows)
 
-Doble clic en `Crear-Acceso-Directo-Mark.bat`. Usa (o clona) el repo en
-`%USERPROFILE%\Documents\AI Local\JarvisLocal` (variable `MARK_DIR`), cierra las
-instancias abiertas de Mark, instala dependencias con `uv` (Python 3.12),
-compila la interfaz de OpenJarvis con Node.js cuando cambia, asegura Ollama con
-`qwen3:8b`, publica `JarvisLocal.exe` si falta (.NET 8 SDK) y crea **Mark** en el
-escritorio. En terminal siguen disponibles `uv run mark` (OpenJarvis) y
-`uv run jarvis-local` (Mark).
+Doble clic en `Crear-Acceso-Directo-Mark.bat`. Localiza o clona el repositorio
+en `%USERPROFILE%\Documents\AI Local\JarvisLocal` (variable `MARK_DIR`) y ejecuta
+`scripts\Install-Mark.ps1`, que:
+
+1. Cierra solo los procesos de Mark.
+2. Instala dependencias con `uv` (Python 3.12), incluido el componente Rust de OpenJarvis. Necesita las MSVC Build Tools y pide permiso para instalarlas.
+3. Compila la interfaz de capacidades cuando cambia.
+4. Asegura Ollama con `qwen3:8b`.
+5. Republica `JarvisLocal.exe` cuando cambia su código (.NET 8 SDK).
+6. Crea el icono **Mark** en el escritorio.
+
+El script deja un registro en `data\logs` y no toca `data\`, `models\` ni los entornos de voz.
 
 ## Voz de Mark fuera de esta PC
 

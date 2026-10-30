@@ -27,6 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE_FILE = ROOT / "OPENJARVIS_UPSTREAM"
+REFS = "refs/openjarvis"
 
 # Partes de OpenJarvis que Mark sustituyó a propósito: sus workflows de
 # publicación (Mark tiene los suyos) y el lockfile, que se regenera con
@@ -96,17 +97,19 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     print(f"Descargando OpenJarvis ({args.to}) desde {repo}…")
-    git("fetch", "--quiet", "--no-tags", repo, base, capture=True)
-    git("fetch", "--quiet", "--no-tags", repo, args.to, capture=True)
-    target = git("rev-parse", "FETCH_HEAD")
+    # Solo hacen falta los dos árboles: profundidad 1, a referencias propias.
+    for ref, rev in (("base", base), ("target", args.to)):
+        git("fetch", "--quiet", "--no-tags", "--depth=1", repo, f"+{rev}:{REFS}/{ref}")
+    target = git("rev-parse", f"{REFS}/target")
     if target == base:
         print(f"Mark ya integra la última versión de OpenJarvis ({base[:7]}).")
         return 0
-    count = git("rev-list", "--count", f"{base}..{target}", check=False) or "?"
-    print(f"Cambios de OpenJarvis {base[:7]} → {target[:7]} ({count} commits).")
+    print(f"Cambios de OpenJarvis {base[:7]} → {target[:7]}.")
 
     excludes = [f":(exclude){path}" for path in EXCLUDED]
-    patch = git("diff", "--binary", "--full-index", base, target, "--", ".", *excludes)
+    patch = git(
+        "diff", "--binary", "--full-index", f"{REFS}/base", target, "--", ".", *excludes
+    )
     if not patch:
         print("No hay cambios aplicables fuera de las rutas excluidas.")
         if not args.check:
