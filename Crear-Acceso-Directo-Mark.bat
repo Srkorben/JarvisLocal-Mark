@@ -1,25 +1,27 @@
 @echo off
-rem Crea (o actualiza) el acceso directo "Mark" en el escritorio.
+rem Prepara Mark y crea (o actualiza) el acceso directo "Mark" en el escritorio.
+rem Mark abre como programa de Windows (mark-desktop.exe): sin navegador,
+rem sin puertos y sin inicio de sesion. Todo corre local.
 rem Puede ejecutarse desde la carpeta del repositorio o descargado suelto:
 rem en ese caso usa (o clona) el repositorio en MARK_DIR.
 setlocal EnableExtensions
-title Crear acceso directo de Mark
+title Preparar Mark
 
 set "REPO_URL=https://github.com/Srkorben/JarvisLocal-Mark.git"
 set "FEATURE_BRANCH=claude/determined-ramanujan-1k1mlz"
+set "DEFAULT_MODEL=qwen3:8b"
 if not defined MARK_DIR set "MARK_DIR=%USERPROFILE%\Documents\AI Local\JarvisLocal"
 
 rem 1) Si este .bat esta dentro del repositorio nuevo, usarlo tal cual.
-if exist "%~dp0src\openjarvis\speech\mark_voice\backend.py" (
+if exist "%~dp0src\openjarvis\mark_desktop\app.py" (
     set "MARK_DIR=%~dp0."
-    goto acceso
+    goto dependencias
 )
 
 where git >nul 2>nul
 if errorlevel 1 (
     echo Git no esta instalado. Instalalo desde https://git-scm.com y vuelve a ejecutar este archivo.
-    pause
-    exit /b 1
+    goto error
 )
 
 rem 2) Clonar si la carpeta no existe; si existe, traer la version nueva.
@@ -31,28 +33,70 @@ pushd "%MARK_DIR%" || goto error
 git fetch origin || goto error_pop
 rem Usar master si ya contiene el Mark nuevo; si no, la rama del cambio.
 set "BRANCH=%FEATURE_BRANCH%"
-git cat-file -e origin/master:src/openjarvis/speech/mark_voice/backend.py 2>nul && set "BRANCH=master"
+git cat-file -e origin/master:src/openjarvis/mark_desktop/app.py 2>nul && set "BRANCH=master"
 echo Usando la rama %BRANCH%...
 git checkout "%BRANCH%" || goto error_pop
 git pull --ff-only origin "%BRANCH%" || goto error_pop
 popd
 
-:acceso
+:dependencias
 for %%I in ("%MARK_DIR%") do set "MARK_DIR=%%~fI"
-if not exist "%MARK_DIR%\scripts\windows\Iniciar-Mark.bat" (
-    echo No se encontro el lanzador en "%MARK_DIR%".
+cd /d "%MARK_DIR%" || goto error
+
+rem 3) uv: gestor de Python (trae su propio Python con Tk).
+where uv >nul 2>nul
+if errorlevel 1 (
+    echo Instalando uv...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+)
+where uv >nul 2>nul
+if errorlevel 1 (
+    echo No se pudo instalar uv. Instalalo desde https://docs.astral.sh/uv/
     goto error
 )
+echo Instalando dependencias de Mark ^(la primera vez tarda unos minutos^)...
+uv sync --extra speech || goto error
+if not exist "%MARK_DIR%\.venv\Scripts\mark-desktop.exe" (
+    echo No se genero mark-desktop.exe.
+    goto error
+)
+
+rem 4) Ollama: motor local de IA, con al menos un modelo.
+set "OLLAMA=ollama"
+where ollama >nul 2>nul
+if errorlevel 1 set "OLLAMA=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+if not exist "%OLLAMA%" if "%OLLAMA%" neq "ollama" (
+    echo Instalando Ollama...
+    winget install -e --id Ollama.Ollama --accept-source-agreements --accept-package-agreements
+)
+if "%OLLAMA%" neq "ollama" if not exist "%OLLAMA%" (
+    echo No se pudo instalar Ollama. Instalalo desde https://ollama.com y vuelve a ejecutar este archivo.
+    goto error
+)
+rem Si el servicio de Ollama no esta corriendo, iniciarlo minimizado.
+"%OLLAMA%" list >nul 2>nul
+if errorlevel 1 (
+    start "" /min "%OLLAMA%" serve
+    timeout /t 5 /nobreak >nul
+)
+"%OLLAMA%" list 2>nul | findstr /r /v "^NAME" | findstr /r "." >nul
+if errorlevel 1 (
+    echo Descargando el modelo %DEFAULT_MODEL% ^(unos 5 GB, solo la primera vez^)...
+    "%OLLAMA%" pull %DEFAULT_MODEL% || goto error
+)
+
+rem 5) Acceso directo al ejecutable nativo.
 set "MARK_DIR_PS=%MARK_DIR%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$dir = $env:MARK_DIR_PS;" ^
   "$desktop = [Environment]::GetFolderPath('Desktop');" ^
   "$lnk = Join-Path $desktop 'Mark.lnk';" ^
   "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk);" ^
-  "$s.TargetPath = Join-Path $dir 'scripts\windows\Iniciar-Mark.bat';" ^
+  "$s.TargetPath = Join-Path $dir '.venv\Scripts\mark-desktop.exe';" ^
   "$s.WorkingDirectory = $dir;" ^
   "$s.IconLocation = (Join-Path $dir 'assets\mark.ico') + ',0';" ^
-  "$s.Description = 'Mark - asistente personal local (OpenJarvis)';" ^
+  "$s.Description = 'Mark - asistente personal local';" ^
   "$s.Save();" ^
   "Write-Host ('Acceso directo creado: ' + $lnk)"
 if errorlevel 1 goto error
@@ -65,6 +109,6 @@ exit /b 0
 popd
 :error
 echo.
-echo No se pudo crear el acceso directo. Revisa los mensajes anteriores.
+echo No se pudo completar la preparacion de Mark. Revisa los mensajes anteriores.
 pause
 exit /b 1

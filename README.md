@@ -16,14 +16,23 @@ El asistente se llama siempre **Mark**: el prompt de sistema, la persona
 (`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
 `jarvis`) lo identifican así. Responde en español por defecto.
 
-## Acceso directo en el escritorio (Windows)
+## Mark en el escritorio (Windows)
 
-Ejecuta `Crear-Acceso-Directo-Mark.bat` (doble clic). Si está dentro del
-repositorio, usa esa carpeta; si lo descargaste suelto, clona o actualiza el
-repositorio en `%USERPROFILE%\Documents\AI Local\JarvisLocal` (cámbialo con la
-variable `MARK_DIR`). Crea `Mark.lnk` en el escritorio, que abre
-`scripts\windows\Iniciar-Mark.bat`: interfaz gráfica (`mark gui`) si hay
-Node.js 22+, o chat de texto (`mark`) si no.
+Mark se usa como un programa de Windows: `mark-desktop.exe` abre una ventana
+nativa de chat (tkinter), sin consola, sin navegador, sin puertos y sin inicio
+de sesión. Todo corre en el mismo proceso contra el motor local (Ollama), con la
+persona de Mark. Incluye **Hablar** (micrófono → transcripción local),
+**Voz** (Mark lee sus respuestas con su propia voz) y **Nueva conversación**.
+
+Para instalarlo, haz doble clic en `Crear-Acceso-Directo-Mark.bat`. Si está
+dentro del repositorio usa esa carpeta; si lo descargaste suelto, clona o
+actualiza el repositorio en `%USERPROFILE%\Documents\AI Local\JarvisLocal`
+(cámbialo con la variable `MARK_DIR`). Instala `uv` y las dependencias, instala
+Ollama y descarga `qwen3:8b` si no hay modelos, y crea `Mark.lnk` en el
+escritorio apuntando a `.venv\Scripts\mark-desktop.exe`.
+
+También puede abrirse con `uv run mark-desktop`; el chat por terminal sigue
+disponible con `uv run mark`.
 
 ## Activar la voz de Mark
 
