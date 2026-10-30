@@ -1,262 +1,228 @@
-# Mark Scout
+# Mark
 
-**Mark Scout** (nombre habitual: **Mark**) es un copiloto personal para Windows,
-local por defecto,
-auditable y cancelable. El proyecto se construye por fases: el modelo propone;
-política, presupuesto y ejecutor independientes conservan toda autoridad sobre el
-sistema operativo.
+**Mark** es el asistente personal local de este repositorio. Desde esta versión,
+toda su arquitectura es [OpenJarvis](https://github.com/open-jarvis/OpenJarvis)
+(Apache-2.0, commit `c452da8`): agentes, motores de inferencia, memoria,
+herramientas, servidor, interfaz y escritorio. Lo único que se conserva del Mark
+anterior (JarvisLocal) es **la voz**:
 
-La base técnica conserva temporalmente el nombre `JarvisLocal` en rutas, paquete
-Python, SQLite y ejecutable para evitar una migración destructiva. Esa distinción
-está documentada en el ADR 0014.
+- `voice/` — las muestras de voz originales de Mark;
+- `src/openjarvis/speech/mark_voice/` — el backend TTS `mark_voice`: Qwen3-TTS
+  Base 0.6B en un entorno Python aislado, clonación zero-shot desde la muestra,
+  perfil de muestreo aprobado (temperatura 0,65, top-k 30, semilla 42), control
+  de calidad anti-ruido y consentimiento ligado al SHA-256 de la muestra.
 
-## Estado actual
+El asistente se llama siempre **Mark**: el prompt de sistema, la persona
+(`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
+`jarvis`) lo identifican así. Responde en español por defecto.
 
-Las **Fases 0, 1, 3 y 4 están implementadas y validadas**. La Fase 2 ya tiene un
-pipeline de voz local semidúplex, una muestra propia enrolada y síntesis E2E
-validada; falta la aceptación humana de naturalidad para cerrarla. No se ha iniciado wake word, Playwright, UI
-Automation, broker C#, OCR ni visión.
+## Activar la voz de Mark
 
-Funciona ahora:
+`mark_voice` es el backend TTS predeterminado y el primero en la cadena de
+respaldo. Falla cerrado hasta que esté instalado y enrolado; mientras tanto,
+OpenJarvis usa Kokoro (`em_alex`, español) localmente.
 
-- `ModelProvider` sustituible por configuración (`llama_cpp` u `ollama`);
-- Qwen3-8B Q4_K_M oficial en `llama-server`, contexto de 8K y modo no-thinking;
-- inicio, detección, health check y detención del servidor gestionado;
-- streaming, timeout y cancelación real cerrando la conexión HTTP;
-- tool calling OpenAI-compatible con validación de JSON y esquemas Pydantic;
-- historial textual persistente en SQLite;
-- política, permisos y auditoría completamente independientes del proveedor;
-- offload GPU adaptativo con reserva de VRAM para evitar paginación WDDM;
-- configuración TOML validada, proyectos aislados y presupuestos por turno;
-- memoria de trabajo, episódica, documental y perfil explícito separados;
-- decisiones temporales confirmadas con vigente/anterior, motivo y procedencia;
-- TXT, Markdown y PDF textual indexados incrementalmente por hash;
-- SQLite FTS5 + embeddings locales + coseno exacto, filtrados por proyecto;
-- citas a ruta/sección/página y señalización de posible prompt injection;
-- herramientas deterministas de búsqueda, apertura, proyectos, Git y archivos;
-- permisos `open`, `execute` y `write` denegados por defecto;
-- creación/copia sin sobrescritura y movimiento sensible confirmado con rollback.
-- micrófono/altavoces WASAPI, controles gráficos, estados explícitos y semidúplex;
-- `STTProvider` faster-whisper small CPU INT8 con VAD/hotwords;
-- `TTSProvider` sustituible, cancelación de audio y auditoría sin guardar PCM;
-- Chatterbox LatAm aislado/offline para la voz propia, ligado a consentimiento.
-- importación local de referencias de voz autorizadas (15–30 s) desde **Sistemas**,
-  con normalización, hash, respaldo recuperable y auditoría sin guardar el audio;
-- aplicación WPF/WebView2 `JarvisLocal.exe`, sin consola, con escena procedural,
-  ondas por estado de voz y centro de control loopback de catálogo cerrado;
-- presencia visual efímera para carga, escucha, transcripción, procesamiento,
-  respuesta, cancelación y error, sin duplicar historial ni guardar audio.
-- panel **Núcleo** dentro del chat, con estado real de texto/voz, modelo,
-  CPU, RAM, GPU y VRAM, y controles que reutilizan el catálogo cerrado;
-- seis módulos interactivos con configuración real y límites explícitos;
-- gobernador visual Auto/Equilibrado/Eco que reduce FPS, resolución y partículas
-  durante inferencia y pausa el render al ocultarse.
-- cliente experimental Godot 4.7.2 conectado a la presencia efímera de Mark,
-  iniciable desde el catálogo cerrado sin acceso a memoria, política ni tools.
-
-El benchmark reproducible obtuvo 0,688 s de TTFT mediano, 54,85 tokens/s, 3/3
-casos de tool calling y cancelación en 94 ms. Son medidas de esta máquina y no una
-garantía. El benchmark RAG obtuvo 4/4 fuentes esperadas y 1,524 s de latencia
-mediana de consulta con embeddings en CPU. Consulta [PROJECT_STATUS.md](PROJECT_STATUS.md),
-el [benchmark del LLM](benchmarks/results/qwen3-8b-q4_k_m-ctx8192.md) y el
-[benchmark RAG](benchmarks/results/rag-qwen3-embedding-0.6b-q8_0.md).
-La prueba E2E con audio sintético obtuvo 11,735 s sin reproducción y reveló
-errores con nombres técnicos; consulta el
-[benchmark de voz](benchmarks/results/audio-phase2.md). No se promete latencia
-conversacional hasta medir la muestra propia.
-
-## Preparación
-
-Requisitos:
-
-- Windows 11 de 64 bits;
-- Python 3.12 de 64 bits;
-- NVIDIA RTX 5060 Laptop o hardware compatible para la configuración incluida;
-- artefactos locales descritos en [docs/dependencies.md](docs/dependencies.md).
-
-El equipo local ya contiene el binario y el modelo, ambos ignorados por Git. Para
-recrear el entorno Python:
+Windows (CUDA):
 
 ```powershell
-Set-Location 'C:\Users\andcb\Documents\AI Local\JarvisLocal'
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\mark-voice\Setup-MarkVoice.ps1
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\mark-voice\Enroll-MarkVoice.ps1 -TextFile .\transcripcion.txt
 ```
 
-El script crea `.venv`, instala el paquete y dependencias de desarrollo, ejecuta
-las pruebas y termina con diagnóstico. Si encuentra un entorno de otra versión de
-Python, lo preserva como `.venv.incompatible-<fecha>`.
+Linux/macOS: `scripts/mark-voice/setup-mark-voice.sh` y luego
+`uv run python -m openjarvis.speech.mark_voice enroll --reference "voice/mark_modelo_de voz1.mp3" --text-file transcripcion.txt --confirm-own-voice`.
 
-La voz activa usa deliberadamente otro entorno. Ya está instalada en esta máquina;
-para recrearla descarga Qwen3-TTS Base 0.6B fijado por revisión (~2,52 GB):
+`transcripcion.txt` debe contener el texto literal que se dice en la muestra.
+Comprueba el estado con `uv run python -m openjarvis.speech.mark_voice status` y
+prueba con `uv run python -m openjarvis.speech.mark_voice say "Hola, soy Mark"`.
+Los ajustes viven en `[speech.mark_voice]` de `~/.openjarvis/config.toml`
+(`device = "cpu"` si no hay GPU).
 
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Setup-Qwen3TTS.ps1
+---
+
+_Documentación original de OpenJarvis:_
+
+<div align="center">
+  <img alt="OpenJarvis" src="assets/OpenJarvis_Horizontal_Logo.png" width="400">
+
+  <p><i>Personal AI, On Personal Devices.</i></p>
+
+  <p>
+    <a href="https://arxiv.org/abs/2605.17172"><img src="https://img.shields.io/badge/arXiv-2605.17172-b31b1b.svg" alt="arXiv"></a>
+    <a href="https://openjarvis.stanford.edu/"><img src="https://img.shields.io/badge/project-OpenJarvis-blue" alt="Project"></a>
+    <a href="https://open-jarvis.github.io/OpenJarvis/"><img src="https://img.shields.io/badge/docs-mkdocs-blue" alt="Docs"></a>
+    <img src="https://img.shields.io/badge/python-%3E%3D3.10-blue" alt="Python">
+    <img src="https://img.shields.io/badge/license-Apache%202.0-green" alt="License">
+    <a href="https://discord.gg/CMVBmDQ5Fj"><img src="https://img.shields.io/badge/discord-join-7289da?logo=discord&logoColor=white" alt="Discord"></a>
+    <a href="https://x.com/OpenJarvisAI"><img src="https://img.shields.io/badge/X-@OpenJarvisAI-black?logo=x&logoColor=white" alt="X / Twitter"></a>
+  </p>
+</div>
+
+---
+
+<div align="center">
+  <img alt="OpenJarvis demo reel" src="assets/openjarvis_demo_reel.webp" width="75%">
+</div>
+
+---
+
+> **[Documentation](https://open-jarvis.github.io/OpenJarvis/)**
+>
+> **[Project Site](https://openjarvis.stanford.edu/)**
+>
+> **[Paper](https://arxiv.org/abs/2605.17172)**
+>
+> **[Leaderboard](https://open-jarvis.github.io/OpenJarvis/leaderboard/)**
+>
+> **[Roadmap](https://open-jarvis.github.io/OpenJarvis/development/roadmap/)**
+
+## Why OpenJarvis?
+
+Personal AI agents are exploding in popularity, but nearly all of them still route intelligence through cloud APIs. Your "personal" AI continues to depend on someone else's server. At the same time, our [Intelligence Per Watt](https://www.intelligence-per-watt.ai/) research showed that local language models already handle 88.7% of single-turn chat and reasoning queries, with intelligence efficiency improving 5.3× from 2023 to 2025. The models and hardware are increasingly ready. What has been missing is the software stack to make local-first personal AI practical.
+
+OpenJarvis is that stack. It is a framework for local-first personal AI, built around three core ideas: shared primitives for building on-device agents; evaluations that treat energy, FLOPs, latency, and dollar cost as first-class constraints alongside accuracy; and a learning loop that improves models using local trace data. The goal is simple: make it possible to build personal AI agents that run locally by default, calling the cloud only when truly necessary. OpenJarvis aims to be both a research platform and a production foundation for local AI, in the spirit of PyTorch.
+
+## Installation
+
+Pick your platform and run one command. Each installer handles [uv](https://docs.astral.sh/uv/), the Python venv, Ollama, and a starter model — about 3 minutes on broadband.
+
+| Platform | One-liner |
+|---|---|
+| **macOS · Linux · WSL2** | `curl -fsSL https://open-jarvis.github.io/OpenJarvis/install.sh \| bash` |
+| **Native Windows** | `irm https://open-jarvis.github.io/OpenJarvis/install.ps1 \| iex` |
+| **Desktop GUI** | Download `.exe` / `.dmg` / `.deb` / `.rpm` / `.AppImage` from the [latest release](https://github.com/open-jarvis/OpenJarvis/releases) |
+
+Then `jarvis` to start. The Rust extension and larger models continue downloading in the background; `jarvis doctor` shows status.
+
+Platform-specific notes (WSL2 setup, native-Windows scheduled-task service, desktop prerequisites, manual / contributor install): see the [installation docs](https://open-jarvis.github.io/OpenJarvis/getting-started/install/).
+
+## Quick Start
+
+```bash
+jarvis                          # start chatting (default: chat-simple)
+jarvis gui                      # start the graphical browser interface
+jarvis init --preset <name> --force  # replace config with a starter preset
 ```
 
-## Uso y verificación
+`jarvis gui` starts the local API server and frontend, then opens the graphical
+chat interface in your default browser. It requires Node.js 22+ and is
+available from a source checkout; packaged desktop installers are available
+from the [latest release](https://github.com/open-jarvis/OpenJarvis/releases).
 
-La experiencia principal se abre desde `Mark Scout.lnk`, que ejecuta directamente
-`runtime\desktop\JarvisLocal.exe`. No abre CMD ni PowerShell. En **Conversación**,
-pulsa **Iniciar llamada** una sola vez: Mark escucha cada intervención, responde y
-vuelve a escuchar hasta que pulses **Colgar**. En **Pulsar para hablar**, mantén el
-micrófono presionado y suéltalo para enviar.
-Consulta [docs/desktop.md](docs/desktop.md).
+> Prefix `jarvis ...` with `uv run`, or `source .venv/bin/activate` first.
 
-Para cambiar la referencia de síntesis, abre **Sistemas → Enrolar mi voz → Subir
-audio**. Admite WAV, MP3, M4A, FLAC, OGG, OPUS, AAC o WMA de 15–30 segundos y
-24 MiB como máximo. Debes confirmar que eres titular de la voz o que cuentas con
-autorización del titular. El proceso permanece en `127.0.0.1`; normaliza el audio
-a PCM mono de 24 kHz y respalda la referencia anterior. Qwen3-TTS usa la muestra
-como referencia zero-shot: no se reentrenan los pesos del modelo. La referencia
-MP3 aprobada permanece activa hasta que el importador preserve también la fuente
-de alta fidelidad para Qwen3-TTS.
+| Preset | What it does |
+|---|---|
+| `morning-digest-mac` / `morning-digest-linux` / `morning-digest-minimal` | Spoken daily briefing from email, calendar, health, news |
+| `deep-research` | Multi-hop research across indexed docs with citations |
+| `code-assistant` | Agent with code execution, file I/O, and shell access |
+| `scheduled-monitor` | Stateful agent on a schedule with memory |
+| `chat-simple` | Lightweight conversation, no tools |
 
-El centro también puede iniciarse, consultarse o detenerse desde consola para
-diagnóstico o recuperación:
+Example:
 
-```powershell
-.\.venv\Scripts\python.exe -m jarvis_local.control_center --launch
-.\.venv\Scripts\python.exe -m jarvis_local.control_center --status
-.\.venv\Scripts\python.exe -m jarvis_local.control_center --stop
+```bash
+jarvis init --preset morning-digest-mac --force
+jarvis connect gdrive          # one OAuth covers Gmail / Calendar / Tasks
+jarvis digest --fresh          # generate and play your first briefing
 ```
 
-```powershell
-# Conversación interactiva; inicia y detiene llama-server automáticamente
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\Run-Jarvis.ps1
+Per-preset deep dives: [morning digest](https://open-jarvis.github.io/OpenJarvis/user-guide/morning-digest/) · [deep research](https://open-jarvis.github.io/OpenJarvis/user-guide/deep-research/) · [code assistant](https://open-jarvis.github.io/OpenJarvis/user-guide/code-assistant/) · [scheduled monitor](https://open-jarvis.github.io/OpenJarvis/user-guide/scheduled-monitor/) · [chat simple](https://open-jarvis.github.io/OpenJarvis/user-guide/chat-simple/) · or the full [quickstart guide](https://open-jarvis.github.io/OpenJarvis/getting-started/quickstart/).
 
-# Una instrucción
-.\.venv\Scripts\python.exe -m jarvis_local.cli --once '¿Qué hora es?'
+### Skills
 
-# Diagnóstico y cadena de auditoría
-.\.venv\Scripts\python.exe -m jarvis_local.cli --doctor
-.\.venv\Scripts\python.exe -m jarvis_local.cli --verify-audit
+Skills teach agents how to better use tools and improve their reasoning. Every skill is a tool — agents discover them from a catalog and invoke them on demand.
 
-# Enrolar conscientemente 15 s de tu propia voz (una sola vez)
-.\.venv\Scripts\python.exe -m jarvis_local.cli `
-  --enroll-own-voice --voice-enroll-seconds 15
+```bash
+# Install skills from public sources
+jarvis skill install hermes:arxiv
+jarvis skill sync hermes --category research
 
-# Inventario, diagnóstico y runtime de voz controlado por la interfaz
-.\.venv\Scripts\python.exe -m jarvis_local.cli --list-audio-devices
-.\.venv\Scripts\python.exe -m jarvis_local.cli --audio-doctor
-.\.venv\Scripts\python.exe -m jarvis_local.cli --voice
+# Use skills with any agent
+jarvis ask "Use the code-explainer skill to explain this Python code: for i in range(5): print(i*2)"
 
-# Proyecto activo, índice incremental y consulta con fuentes
-.\.venv\Scripts\python.exe -m jarvis_local.cli --list-projects
-.\.venv\Scripts\python.exe -m jarvis_local.cli --index-project
-.\.venv\Scripts\python.exe -m jarvis_local.cli `
-  --rag-query '¿Qué decisión de arquitectura está documentada?'
+# Optimize skills from your trace history
+jarvis optimize skills --policy dspy
 
-# Registrar y consultar una decisión confirmada (escritura sólo desde CLI local)
-.\.venv\Scripts\python.exe -m jarvis_local.cli `
-  --record-decision 'Usar SQLite.' `
-  --decision-topic 'Persistencia' `
-  --decision-reason 'Despliegue local de un solo usuario.'
-.\.venv\Scripts\python.exe -m jarvis_local.cli --decision-history 'Persistencia'
-
-# Evaluar una acción sin efectos
-.\.venv\Scripts\python.exe -m jarvis_local.cli `
-  --simulate-tool list_directory `
-  --arguments '{"path":"C:\\Users\\andcb\\Documents\\AI Local\\JarvisLocal"}'
-
-# Ver permisos y habilitar explícitamente una capacidad para el proyecto activo
-.\.venv\Scripts\python.exe -m jarvis_local.cli --list-projects
-.\.venv\Scripts\python.exe -m jarvis_local.cli --set-project-permission open=true
-
-# Integración real controlada de herramientas de Fase 4
-.\.venv\Scripts\python.exe -m jarvis_local.phase4_smoke
-
-# Suite y benchmark
-.\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m jarvis_local.benchmark
-.\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
+# Benchmark the impact
+jarvis bench skills --max-samples 5 --seeds 42
 ```
 
-En llamada, **Silenciar** libera la captura hasta reactivarla; **Interrumpir**
-detiene el turno actual y **Colgar** cierra la sesión y el micrófono. En modo
-manual, mantén pulsado el micrófono y suelta para enviar. `Ctrl+C` solo cierra la
-CLI de diagnóstico. La voz transcrita nunca confirma
-acciones sensibles. Qwen3-TTS está seleccionado y falla cerrado si faltan la
-muestra, su transcripción o el manifiesto SHA-256. Consulta
-[docs/audio.md](docs/audio.md).
+Import from [Hermes Agent](https://github.com/NousResearch/hermes-agent) (~150 skills), [OpenClaw](https://github.com/openclaw/skills) (~13,700 community skills), or any GitHub repo. Skills follow the [agentskills.io](https://agentskills.io/specification) open standard.
 
-La voz clonada usa CUDA en la RTX 5060. Mark carga y condiciona Qwen3-TTS Base
-0.6B antes de `llama-server`, de modo que el offload adaptativo del LLM utiliza
-la VRAM restante. La ruta activa usa el MP3 original autorizado porque la
-normalización previa a WAV alteraba perceptiblemente el timbre. La salida de
-24 kHz se entrega directamente a la conversión nativa de WASAPI; Mark no aplica
-un remuestreo lineal distinto al de los previews. Piper,
-Chatterbox y XTTS se conservan como fallbacks, pero no son la selección activa.
+See the [Skills User Guide](https://open-jarvis.github.io/OpenJarvis/user-guide/skills/) and [Skills Tutorial](https://open-jarvis.github.io/OpenJarvis/tutorials/skills-workflow/) for details.
 
-## Configuración de modelos
+### Built-in Agents
 
-`config\jarvis.toml` selecciona el proveedor sin cambiar el núcleo:
+OpenJarvis ships with eight built-in agents across three execution modes (on-demand, scheduled, continuous):
 
-```toml
-[llm]
-provider = "llama_cpp"
-base_url = "http://127.0.0.1:8080/v1"
-model = "qwen3-8b-q4_k_m"
-context_tokens = 8192
+| Agent | Type | What it does |
+|-------|------|-------------|
+| `morning_digest` | Scheduled | Daily briefing from email, calendar, health, news — with TTS audio |
+| `deep_research` | On-demand | Multi-hop research with citations across web and local docs |
+| `monitor_operative` | Continuous | Long-horizon monitoring with memory, compression, and retrieval |
+| `orchestrator` | On-demand | Multi-turn reasoning with automatic tool selection |
+| `native_react` | On-demand | ReAct (Thought-Action-Observation) loop agent |
+| `operative` | Continuous | Persistent autonomous agent with state management |
+| `native_openhands` | On-demand | CodeAct — generates and executes Python code |
+| `simple` | On-demand | Single-turn chat, no tools |
 
-[llama_cpp]
-auto_start = true
-gpu_layers = "auto"
-fit_target_mib = 1024
+See the [User Guide](https://open-jarvis.github.io/OpenJarvis/user-guide/morning-digest/) and [Tutorials](https://open-jarvis.github.io/OpenJarvis/tutorials/) for detailed setup instructions.
 
-[embeddings]
-provider = "llama_cpp"
-base_url = "http://127.0.0.1:8081/v1"
-model = "qwen3-embedding-0.6b-q8_0"
-gpu_layers = 0
+Full documentation — including Docker deployment, cloud engines, development setup, and tutorials — at **[open-jarvis.github.io/OpenJarvis](https://open-jarvis.github.io/OpenJarvis/)**.
+
+## Community
+
+- **GitHub:** [github.com/open-jarvis/OpenJarvis](https://github.com/open-jarvis/OpenJarvis)
+- **Discord:** [discord.gg/CMVBmDQ5Fj](https://discord.gg/CMVBmDQ5Fj)
+- **X / Twitter:** [@OpenJarvisAI](https://x.com/OpenJarvisAI)
+- **Docs:** [open-jarvis.github.io/OpenJarvis](https://open-jarvis.github.io/OpenJarvis/)
+
+## Contributing
+
+We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for incentives, contribution types, and the PR process.
+
+Quick start for contributors:
+
+```bash
+git clone https://github.com/open-jarvis/OpenJarvis.git
+cd OpenJarvis
+uv sync --extra dev
+uv run pre-commit install
+uv run pytest tests/ -v
 ```
 
-Solo se aceptan URLs `http://127.0.0.1`. `llama-server` desactiva su UI y no
-habilita tools, MCP ni agent mode. Cambiar el modelo o proveedor no altera
-allowlists, niveles de riesgo ni permisos efectivos.
+Browse the [Roadmap](https://open-jarvis.github.io/OpenJarvis/development/roadmap/) for areas where help is needed. Comment **"take"** on any issue to get auto-assigned.
 
-Los secretos nunca deben guardarse en TOML. No añadas como raíz autorizada `C:\`,
-el perfil completo, `AppData`, credenciales ni ubicaciones protegidas. El núcleo
-no debe ejecutarse como administrador.
+## About
 
-Los permisos `open`, `execute` y `write` deben habilitarse por proyecto desde la
-CLI local. `move_file` siempre exige además confirmación interactiva. Consulta la
-[matriz de herramientas](docs/tools.md) antes de ampliar permisos.
+OpenJarvis is part of [Intelligence Per Watt](https://www.intelligence-per-watt.ai/), a research initiative studying the intelligence efficiency of AI systems. The project is developed at [Hazy Research](https://hazyresearch.stanford.edu/) and the [Scaling Intelligence Lab](https://scalingintelligence.stanford.edu/) at [Stanford SAIL](https://ai.stanford.edu/).
 
-## Estructura
+## Sponsors
 
-```text
-JarvisLocal/
-├─ benchmarks/             runner y resultados reproducibles
-├─ config/                 configuración declarativa
-├─ desktop/                shell WPF/WebView2 de la aplicación gráfica
-├─ docs/                   arquitectura, selección, roadmap y ADR
-├─ models/                 pesos locales ignorados por Git
-├─ runtime/                llama.cpp local ignorado por Git
-├─ scripts/                instalación y ejecución
-├─ src/jarvis_local/
-│  ├─ model_providers/     contrato, Ollama, llama.cpp y gestor del servidor
-│  ├─ audio/               WASAPI, STT/TTS, llamada/PTT, estados y enrolamiento
-│  ├─ control_center/      UI local, presencia efímera y gestor de procesos
-│  ├─ memory/              trabajo, episodios y perfil explícito
-│  ├─ rag/                 extracción, embeddings, índice y recuperación híbrida
-│  ├─ cli.py               interfaz local confiable
-│  ├─ orchestrator.py      conversación y coordinación sin autoridad
-│  ├─ execution.py         puerta única de ejecución del núcleo
-│  ├─ policy.py            política independiente del LLM
-│  ├─ tools/               esquemas, registro y herramientas
-│  ├─ projects.py          identidad, permisos y aislamiento por proyecto
-│  ├─ database.py          persistencia y cadena de auditoría
-│  └─ cancellation.py      cancelación cooperativa
-└─ tests/                  pruebas unitarias, integración HTTP y seguridad
+<p>
+  <a href="https://www.laude.org/">Laude Institute</a> &bull;
+  <a href="https://datascience.stanford.edu/marlowe">Stanford Marlowe</a> &bull;
+  <a href="https://cloud.google.com/">Google Cloud Platform</a> &bull;
+  <a href="https://lambda.ai/">Lambda Labs</a> &bull;
+  <a href="https://ollama.com/">Ollama</a> &bull;
+  <a href="https://research.ibm.com/">IBM Research</a> &bull;
+  <a href="https://hai.stanford.edu/">Stanford HAI</a>
+</p>
+
+## Citation
+```bibtex
+@misc{saadfalcon2026openjarvispersonalaipersonal,
+      title={OpenJarvis: Personal AI, On Personal Devices}, 
+      author={Jon Saad-Falcon and Avanika Narayan and Robby Manihani and Tanvir Bhathal and Herumb Shandilya and Hakki Orhun Akengin and Gabriel Bo and Andrew Park and Matthew Hart and Caia Costello and Chuan Li and Christopher Ré and Azalia Mirhoseini},
+      year={2026},
+      eprint={2605.17172},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2605.17172}, 
+}
 ```
 
-Consulta [SECURITY.md](SECURITY.md) antes de añadir una capacidad y
-[docs/rag.md](docs/rag.md) para operar memoria documental. Revisa
-[la evaluación de patrones de CORE](docs/core-evaluation.md),
-[docs/tools.md](docs/tools.md) para acciones de Windows y
-[docs/roadmap.md](docs/roadmap.md) antes de ampliar el alcance. La auditoría,
-operación y recuperación del acceso único están en
-[docs/control-center.md](docs/control-center.md). El diagnóstico y la hoja de ruta
-visual están en [docs/immersive-interface.md](docs/immersive-interface.md).
-El inventario y las pruebas de motores están en
-[docs/3d-engines.md](docs/3d-engines.md).
+## License
+
+[Apache 2.0](LICENSE)
