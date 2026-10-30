@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router';
+import { Outlet, useLocation, useNavigate } from 'react-router';
+import { inMarkShell } from '../lib/markShell';
 import { ApprovalBell } from './ApprovalBell';
 import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
@@ -23,6 +24,10 @@ export function Layout() {
   }, []);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  // Inside Mark, Mark's tab bar is the navigation; the chat keeps its
+  // conversation list.
+  const showSidebar = !inMarkShell || location.pathname === '/';
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden relative" style={{ paddingTop: '3px' }}>
@@ -56,8 +61,8 @@ export function Layout() {
       )}
 
       <div className="flex flex-1 min-h-0 relative z-10">
-        <Sidebar />
-        {sidebarOpen && (
+        {showSidebar && <Sidebar />}
+        {showSidebar && sidebarOpen && (
           <div
             className="fixed inset-0 z-20 bg-black/40 md:hidden"
             onClick={() => useAppStore.getState().setSidebarOpen(false)}

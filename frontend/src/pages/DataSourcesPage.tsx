@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router';
+import { connectorFocus } from '../lib/markShell';
 import { motion } from 'motion/react';
 import { useAppStore } from '../lib/store';
 import {
@@ -835,6 +837,7 @@ export function SyncStatusDisplay({
 }
 
 function DataSourcesSection() {
+  const location = useLocation();
   const cachedConnectors = useAppStore((s) => s.cachedConnectors);
   const setCachedConnectors = useAppStore((s) => s.setCachedConnectors);
   const connectors = cachedConnectors ?? [];
@@ -1036,11 +1039,16 @@ function DataSourcesSection() {
     return connectors.filter((c) => c.connector_id !== 'gmail');
   })();
 
-  const connected = unifiedConnectors.filter((c) => c.connected);
-  const notConnectedBase = unifiedConnectors.filter((c) => !c.connected);
+  // Mark's "Correo" / "Calendario y tareas" tabs: ?focus=email|calendar
+  const focus = connectorFocus(location.search);
+  const shownConnectors = focus
+    ? unifiedConnectors.filter((c) => focus.ids.includes(c.connector_id))
+    : unifiedConnectors;
+  const connected = shownConnectors.filter((c) => c.connected);
+  const notConnectedBase = shownConnectors.filter((c) => !c.connected);
   // Always show the upload card in the not-connected list (it has no backend connector)
   const uploadEntry = { connector_id: 'upload', display_name: 'Upload / Paste', connected: false, chunks: 0, auth_type: 'local' };
-  const notConnected = notConnectedBase.some((c) => c.connector_id === 'upload')
+  const notConnected = focus || notConnectedBase.some((c) => c.connector_id === 'upload')
     ? notConnectedBase
     : [...notConnectedBase, uploadEntry];
   const connectorActionsBusy = loading || disconnectingId !== null;
@@ -2294,7 +2302,19 @@ function MemorySection() {
 
 export function DataSourcesPage() {
   const [agents, setAgents] = useState<ManagedAgent[]>([]);
-  const [activeTab, setActiveTab] = useState<'sources' | 'messaging' | 'memory'>('sources');
+  // Mark's tabs open a sub-tab directly: /data-sources?tab=memory
+  const search = useLocation().search;
+  const tabParam = new URLSearchParams(search).get('tab');
+  const [activeTab, setActiveTab] = useState<'sources' | 'messaging' | 'memory'>(
+    tabParam === 'messaging' || tabParam === 'memory' ? tabParam : 'sources',
+  );
+  useEffect(() => {
+    if (tabParam === 'messaging' || tabParam === 'memory' || tabParam === 'sources') {
+      setActiveTab(tabParam);
+    } else if (!tabParam) {
+      setActiveTab('sources');
+    }
+  }, [tabParam, search]);
   const [creatingAgent, setCreatingAgent] = useState(false);
 
   const loadAgents = useCallback(() => {

@@ -209,7 +209,9 @@ def build_tool_catalog(
             requirements=core_requirements_base + (
                 Requirement(openjarvis_ui, "Interfaz de OpenJarvis compilada (Crear-Acceso-Directo-Mark.bat)"),
             ),
-            exclusive_groups=("maintenance",),
+            # Convive con la voz y el chat (usan el mismo Ollama); solo choca
+            # con las tareas que reinstalan dependencias del entorno principal.
+            exclusive_groups=("core_dependencies",),
             visible_console=False,
             environment=openjarvis_environment
             or (("OPENJARVIS_FRAME_ANCESTORS", "http://127.0.0.1:*"),),
@@ -285,7 +287,7 @@ def build_tool_catalog(
             script_name="Setup.ps1",
             source="JarvisLocal - Instalar o reparar.lnk",
             requirements=(),
-            groups=("core_runtime", "audio", "maintenance"),
+            groups=("core_runtime", "audio", "maintenance", "core_dependencies"),
             confirmation=True,
         ),
         script_tool(
@@ -296,7 +298,7 @@ def build_tool_catalog(
             script_name="Setup-AudioModels.ps1",
             source="JarvisLocal - Preparar modelos de audio.lnk",
             requirements=core_requirements,
-            groups=("core_runtime", "audio", "maintenance"),
+            groups=("core_runtime", "audio", "maintenance", "core_dependencies"),
             confirmation=True,
         ),
         script_tool(

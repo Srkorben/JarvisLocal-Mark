@@ -15,6 +15,40 @@ dentro de la misma ventana en **Capacidades de Mark**.
 | Capacidades | `jarvis serve` en `127.0.0.1:8765`, sin clave ni login, incrustado en la ventana; hogar propio en `data\openjarvis` | `src/jarvis_local/openjarvis_bridge.py` |
 | Voz | Qwen3-TTS aislado; OpenJarvis la usa como backend `mark_voice` con la misma muestra y consentimiento | `src/openjarvis/speech/mark_voice/` |
 
+## Navegación: la pantalla de Mark es la puerta de entrada
+
+La pantalla de inicio de Mark (círculo azul, ondas, indicador de conexión,
+Iniciar llamada) se conserva. Debajo del encabezado hay pestañas; cada una abre
+una página real de la interfaz de OpenJarvis dentro de la misma ventana, con el
+tema azul de Mark y sin la barra lateral propia de OpenJarvis (`?shell=mark`):
+
+| Pestaña | Página de OpenJarvis |
+| --- | --- |
+| Inicio | Pantalla de Mark |
+| Conversación | Chat de Mark (texto y voz, con su política y herramientas) |
+| Agentes y automatizaciones | `/agents`: agentes gestionados, plantillas, programación |
+| Investigación | `/` con Deep Research activado |
+| Correo | `/data-sources?focus=email`: Gmail, Gmail IMAP, IMAP, Outlook |
+| Calendario y tareas | `/data-sources?focus=calendar`: Google Calendar, Google Tasks, Google Contacts (y Apple en macOS) |
+| Documentos y fuentes | `/data-sources`: todos los conectores y la carga de archivos |
+| Memoria | `/data-sources?tab=memory` |
+| Canales | `/data-sources?tab=messaging` |
+| Herramientas | `/settings?section=tools` |
+| Modelos | `/settings?section=models` |
+| Configuración | `/settings` |
+| Estado | `/dashboard` |
+| Registros | `/logs` |
+
+OpenJarvis arranca con Mark y el encabezado muestra su estado (apagado,
+iniciando, listo o con error). Así las pestañas responden al instante y las
+automatizaciones programadas corren mientras Mark esté abierto.
+
+## Iniciar llamada
+
+- **Regresión corregida:** con el panel de OpenJarvis abierto, "Iniciar llamada" y el chat fallaban con "entra en conflicto con OpenJarvis", porque compartían el grupo exclusivo `maintenance`. Ahora OpenJarvis convive con la voz y el chat, y solo choca con las tareas que reinstalan dependencias.
+- **Motivo visible:** si la llamada no está disponible, debajo del botón aparece exactamente qué falta (entorno de voz, modelo, muestra, transcripción o consentimiento).
+- **Diagnóstico sin cambios:** `python -m jarvis_local.control_center --voice-check` informa, sin modificar nada, el motor de voz, la muestra configurada y lo que falte. El instalador lo ejecuta y además comprueba que `.venv-qwen3-tts` carga el *worker* de voz.
+
 ## Seguridad: la política de Mark manda
 
 En cada arranque, Mark regenera `data\openjarvis\capabilities.json` a partir de
@@ -62,7 +96,9 @@ archivo dentro de las raíces; leer `/etc/hostname` se negó por `allowed_dirs`;
 | Voz: TTS `mark_voice` | Probado con un worker simulado; Qwen3-TTS real no se probó aquí |
 | Micrófono en el panel | Permitido solo para `127.0.0.1:8765`; requiere republicar `JarvisLocal.exe` |
 | Dashboard, logs, telemetría, energía (NVIDIA) | Interfaz verificada; energía NVIDIA no medida aquí |
-| Interfaz completa dentro de Mark | Verificada en Chromium con Ollama real; WebView2 no probado |
+| Interfaz completa dentro de Mark | Verificada en Chromium: con Ollama real (chat) y con Ollama simulado (las 14 pestañas); WebView2 no probado |
+| Conector Markdown/Obsidian | Verificado: conectar, sincronizar y recuperar el contenido desde `knowledge.db` |
+| Correo y calendario (estado) | Verificado: la API lista Gmail, IMAP, Outlook, Calendar, Tasks y Contacts con su estado y tipo de autenticación; conectar requiere tus credenciales |
 
 ## VRAM (RTX 5060, 8 GB)
 

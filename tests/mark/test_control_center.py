@@ -230,6 +230,32 @@ class ProcessManagerTests(TestCase):
             manager.stop_all()
             self.assertEqual(manager.list_status()[1]["status"], "available")
 
+    def test_capabilities_panel_never_blocks_call_or_chat(self) -> None:
+        """Regresión: con Capacidades (OpenJarvis) abierto, Iniciar llamada fallaba."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            catalog = build_tool_catalog(root)
+            tools = {
+                tool_id: replace(
+                    catalog[tool_id],
+                    target=Path(sys.executable),
+                    arguments=("--version",),
+                    requirements=(),
+                )
+                for tool_id in ("openjarvis", "voice", "chat_runtime")
+            }
+            manager = ProcessManager(
+                tools,
+                popen_factory=FakePopen(),
+                process_terminator=lambda process: process.terminate(),
+                cooldown_seconds=0,
+            )
+            self.assertEqual(manager.start("openjarvis")["outcome"], "started")
+            self.assertEqual(manager.start("voice")["outcome"], "started")
+            manager.stop("voice")
+            self.assertEqual(manager.start("chat_runtime")["outcome"], "started")
+            manager.stop_all()
+
     def test_stop_all_preserves_non_stoppable_delegated_applications(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -402,8 +428,13 @@ class HTTPTests(TestCase):
         csp = headers["Content-Security-Policy"]
         self.assertIn("frame-src http://127.0.0.1:8765;", csp)
         self.assertIn("frame-ancestors 'none'", csp)
-        for marker in (b'id="ojToggle"', b'id="ojFrame"', b'allow="microphone; autoplay"',
-                       'Capacidades de Mark'.encode(), b'const ojOrigin="http://127.0.0.1:8765"'):
+        markers = [b'id="tabs"', b'id="ojFrame"', b'allow="microphone; autoplay"', b'id="ojState"',
+                   'Capacidades de Mark'.encode(), b'const ojOrigin="http://127.0.0.1:8765"',
+                   b'type:"mark:navigate"', b'shell=mark']
+        for tab in ("home", "chat", "agents", "research", "email", "calendar", "sources",
+                    "memory", "channels", "tools", "models", "settings", "status", "logs"):
+            markers.append(f'data-tab="{tab}"'.encode())
+        for marker in markers:
             self.assertIn(marker, body)
 
         status, _, _ = self.request("GET", "/api/openjarvis/ready")
@@ -873,3 +904,25 @@ class StatusCLITests(TestCase):
                 if server is not None:
                     server.server_close()
                 occupied.close()
+
+
+class CapabilityTabsTests(TestCase):
+    """Cada pestaña de Mark abre una página real de OpenJarvis, no un panel vacío."""
+
+    def test_every_tab_maps_to_an_existing_openjarvis_route(self) -> None:
+        import re
+
+        from jarvis_local.control_center.web import render_dashboard
+
+        page = render_dashboard(csrf_token="c", nonce="n", version="v")
+        tabs = set(re.findall(r'data-tab="([a-z]+)"', page))
+        block = page[page.index("const OJ_TABS="):page.index("let ojStarting")]
+        mapping = dict(re.findall(r'([a-z]+):\{path:"([^"]+)"', block))
+        self.assertEqual(tabs - {"home", "chat"}, set(mapping))
+
+        app = (Path(__file__).resolve().parents[2] / "frontend" / "src" / "App.tsx").read_text(
+            encoding="utf-8"
+        )
+        routes = {"/"} | {"/" + r for r in re.findall(r'<Route path="([a-z-]+)"', app)}
+        for tab, path in mapping.items():
+            self.assertIn(path.split("?")[0], routes, tab)

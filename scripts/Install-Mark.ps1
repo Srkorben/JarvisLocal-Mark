@@ -159,6 +159,29 @@ try {
         Warn 'rust' 'Sin componente Rust: herramientas y memoria de los agentes de OpenJarvis no funcionarán'
     }
 
+    # ------------------------------------------------------------------ 2b
+    Step 'Voz de Mark Scout (solo comprobación, no modifica nada)'
+    $voiceJson = (& $Python -m jarvis_local.control_center --voice-check 2>$null) -join "`n"
+    try { $voice = $voiceJson | ConvertFrom-Json } catch { $voice = $null }
+    if (-not $voice) {
+        Bad 'voz' 'No se pudo comprobar la voz (ver registro)'
+    } else {
+        Write-Host "   Motor de voz: $($voice.tts_provider) ($($voice.tts_device)); referencia: $($voice.reference)"
+        $qwenPython = Join-Path $Root '.venv-qwen3-tts\Scripts\python.exe'
+        $workerOk = $true
+        if ($voice.tts_provider -eq 'qwen3_tts' -and (Test-Path -LiteralPath $qwenPython)) {
+            & $qwenPython -c 'import jarvis_local.qwen3_tts_worker' 2>$null
+            $workerOk = ($LASTEXITCODE -eq 0)
+        }
+        if ($voice.ready -and $workerOk) {
+            Ok 'voz' 'Voz de Mark Scout lista: Iniciar llamada disponible'
+        } elseif (-not $workerOk) {
+            Warn 'voz' 'El entorno .venv-qwen3-tts no carga el worker de voz: ejecuta scripts\Setup-Qwen3TTS.ps1'
+        } else {
+            Warn 'voz' ('Iniciar llamada no disponible. Falta: ' + (@($voice.missing) -join '; '))
+        }
+    }
+
     # ------------------------------------------------------------------ 3
     Step 'Interfaz de capacidades (OpenJarvis)'
     $uiIndex = Join-Path $Root 'src\openjarvis\server\static\index.html'
@@ -239,6 +262,12 @@ try {
             $sdk = (Have 'dotnet') -and (@(& dotnet --list-sdks 2>$null) -match '^8\.').Count -gt 0
         }
         $published = $false
+        if ($sdk -and (Test-Path -LiteralPath $DesktopExe)) {
+            # Copia recuperable de la versión que funcionaba antes de republicar.
+            $backup = Join-Path $Root ('backups\desktop-{0:yyyyMMdd-HHmmss}' -f (Get-Date))
+            Copy-Item -LiteralPath (Split-Path -Parent $DesktopExe) -Destination $backup -Recurse -Force
+            Write-Host "   Copia del ejecutable anterior: $backup"
+        }
         if ($sdk) {
             & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $Root 'scripts\Publish-Desktop.ps1')
             $published = ($LASTEXITCODE -eq 0) -and (Test-Path -LiteralPath $DesktopExe)

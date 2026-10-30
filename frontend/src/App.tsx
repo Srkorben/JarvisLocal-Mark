@@ -17,6 +17,8 @@ import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 import { offerAnalyticsChoice } from './lib/analytics-invitation';
+import { inMarkShell } from './lib/markShell';
+import { MarkShellBridge } from './components/MarkShellBridge';
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -52,6 +54,11 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove('dark', 'light');
+    if (inMarkShell) {
+      // Inside Mark the UI always uses Mark's dark blue theme.
+      root.classList.add('dark', 'mark-shell');
+      return;
+    }
     if (settings.theme === 'dark') root.classList.add('dark');
     else if (settings.theme === 'light') root.classList.add('light');
   }, [settings.theme]);
@@ -182,6 +189,7 @@ export default function App() {
   return (
     <>
       <UpdateChecker />
+      <MarkShellBridge />
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<ChatPage />} />

@@ -115,6 +115,34 @@
     color-scheme: dark;
   }
 
+  /* Inside Mark's window (?shell=mark): Mark Scout's deep-blue palette. */
+  .dark.mark-shell {
+    --color-bg: #02080b;
+    --color-bg-secondary: #051117;
+    --color-bg-tertiary: #08171e;
+    --color-surface: #061117;
+    --color-sidebar: rgba(4, 12, 16, 0.86);
+    --color-border: #183b48;
+    --color-border-subtle: #10303b;
+
+    --color-text: #eefaff;
+    --color-text-secondary: #a8c6d0;
+    --color-text-tertiary: #79929c;
+
+    --color-accent: #69e6ff;
+    --color-accent-hover: #9cf0ff;
+    --color-accent-subtle: rgba(105, 230, 255, 0.1);
+    --color-accent-glow: rgba(105, 230, 255, 0.3);
+    --color-accent-blue-subtle: rgba(105, 230, 255, 0.12);
+
+    --color-code-bg: #051117;
+    --color-input-bg: #051117;
+    --color-input-border: #1b4452;
+    --color-user-bubble: rgba(105, 230, 255, 0.14);
+    --color-user-bubble-text: #eefaff;
+    --color-on-accent: #02080b;
+  }
+
   @media (prefers-color-scheme: dark) {
     :root:not(.light) {
       --color-bg: #0a0a0b;

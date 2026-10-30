@@ -201,10 +201,15 @@ function CloudProviderStatus({ label, keyName }: { label: string; keyName: strin
   );
 }
 
+function sectionId(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div
-      className="rounded-xl p-5"
+      id={`section-${sectionId(title)}`}
+      className="rounded-xl p-5 scroll-mt-4"
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
     >
       <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--color-text)' }}>
@@ -286,6 +291,18 @@ const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 export function SettingsPage() {
+  // Mark's tabs open a specific section: /settings?section=models
+  // window.location (not useLocation): the page is also rendered outside a
+  // Router in tests; Layout re-renders it on every route change.
+  const sectionParam = new URLSearchParams(window.location?.search ?? '').get('section');
+  useEffect(() => {
+    if (!sectionParam) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById(`section-${sectionParam}`)?.scrollIntoView({ block: 'start' });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [sectionParam]);
+
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const conversations = useAppStore((s) => s.conversations);

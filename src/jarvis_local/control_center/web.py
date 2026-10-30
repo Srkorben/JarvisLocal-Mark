@@ -29,7 +29,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       background:radial-gradient(circle at 50% 48%,transparent 0 24%,#0004 58%,#000d 100%); }}
     .grain {{ position:fixed; inset:0; pointer-events:none; opacity:.055;
       background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.95' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E"); }}
-    .app {{ position:relative; z-index:2; height:100%; display:grid; grid-template-rows:auto 1fr auto;
+    .app {{ position:relative; z-index:2; height:100%; display:grid; grid-template-rows:auto auto 1fr auto;
       padding:clamp(18px,3vw,38px); }}
     header {{ display:flex; align-items:center; justify-content:space-between; gap:18px; }}
     .brand {{ display:flex; align-items:center; gap:12px; text-transform:uppercase; letter-spacing:.22em;
@@ -129,11 +129,26 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       background:#040a0def; border-left:1px solid #1b4553; backdrop-filter:blur(22px); transform:translateX(102%);
       transition:transform .28s ease; overflow:auto; box-shadow:-30px 0 80px #000a; }}
     #drawer.open {{ transform:none; }}
-    #openjarvis {{ position:fixed; z-index:9; inset:0; display:none; flex-direction:column;
-      background:#020608f5; backdrop-filter:blur(18px); }}
+    .voice-blocked {{ max-width:min(560px,90vw); margin-top:8px; color:#f0b3b3; font-size:11px;
+      letter-spacing:.04em; text-align:center; line-height:1.5; }}
+    .tabs {{ position:relative; z-index:10; display:flex; flex-wrap:wrap; align-items:center; gap:4px; margin-top:14px;
+      padding-bottom:8px; border-bottom:1px solid #15343e; }}
+    .tab {{ flex:none; border:1px solid transparent; background:transparent; color:#79929c; padding:7px 11px;
+      border-radius:3px; cursor:pointer; text-transform:uppercase; font-size:10.5px; letter-spacing:.12em; }}
+    .tab:hover,.tab:focus-visible {{ color:#eefaff; border-color:#1b4452; outline:none; }}
+    .tab[aria-selected="true"] {{ color:#eefaff; border-color:var(--cyan); background:#071a22;
+      box-shadow:0 0 18px #19bce533; }}
+    .tab-status {{ display:flex; align-items:center; gap:8px; color:#8aa0a9; font-size:11px;
+      letter-spacing:.12em; text-transform:uppercase; white-space:nowrap; }}
+    .status-group {{ display:flex; align-items:center; gap:22px; }}
+    .tab-status .dot {{ background:#46606a; box-shadow:none; }}
+    .tab-status[data-state="ready"] .dot {{ background:var(--cyan); box-shadow:0 0 12px var(--cyan); }}
+    .tab-status[data-state="starting"] .dot {{ background:#f5a524; box-shadow:0 0 10px #f5a524; }}
+    .tab-status[data-state="error"] .dot {{ background:var(--bad); box-shadow:0 0 10px var(--bad); }}
+    #openjarvis {{ position:fixed; z-index:9; left:0; right:0; bottom:0; top:var(--oj-top,120px); display:none;
+      flex-direction:column; background:#02080bf5; backdrop-filter:blur(18px); border-top:1px solid #15343e; }}
     body.oj-open #openjarvis {{ display:flex; }}
-    .oj-head {{ display:flex; align-items:center; gap:16px; padding:10px 18px; border-bottom:1px solid #15343e; }}
-    .oj-head h2 {{ margin:0; text-transform:uppercase; letter-spacing:.18em; font-size:13px; }}
+    .oj-head {{ display:flex; align-items:center; gap:16px; padding:6px 18px; }}
     .oj-engine {{ color:#4e7985; text-transform:uppercase; letter-spacing:.14em; font-size:10px; }}
     #ojStatus {{ flex:1; color:var(--muted); font-size:12px; }}
     #ojFrame {{ flex:1; width:100%; border:0; background:#0b0f14; }}
@@ -189,7 +204,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .quality-note {{ color:#536e76; font-size:11px; line-height:1.5; margin-top:10px; }}
     body[data-quality="eco"] .grain,body[data-quality="paused"] .grain {{ display:none; }}
     body[data-quality="eco"] .ticks {{ opacity:.22; }}
-    #chat {{ position:fixed; z-index:5; left:clamp(12px,2vw,32px); top:clamp(70px,9vh,92px);
+    #chat {{ position:fixed; z-index:5; left:clamp(12px,2vw,32px); top:calc(var(--oj-top,120px) + 10px);
       bottom:clamp(86px,12vh,118px); width:min(430px,calc(100vw - 24px)); display:none; flex-direction:column;
       border:1px solid #1d4b59; background:#040b0fe6; backdrop-filter:blur(16px);
       box-shadow:0 24px 70px #000b,0 0 40px #1fcbe60f; }}
@@ -281,11 +296,27 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 <div class="app">
   <header>
     <div class="brand"><div class="sigil">M</div><span>Mark Scout</span></div>
-    <div class="privacy"><span class="dot"></span><span>núcleo local · 127.0.0.1</span></div>
+    <div class="status-group"><div class="privacy"><span class="dot"></span><span>núcleo local · 127.0.0.1</span></div>
+      <span id="ojState" class="tab-status" data-state="off" role="status"><span class="dot"></span><span id="ojStateText">OpenJarvis apagado</span></span></div>
     <div class="controls"><button id="chatToggle" class="menu" type="button" aria-controls="chat" aria-expanded="false">Chat</button>
-      <button id="ojToggle" class="menu" type="button" aria-controls="openjarvis">Capacidades</button>
       <button id="menu" class="menu" type="button">Sistemas</button></div>
   </header>
+  <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones de Mark">
+    <button class="tab" role="tab" type="button" data-tab="home" aria-selected="true">Inicio</button>
+    <button class="tab" role="tab" type="button" data-tab="chat" aria-selected="false">Conversación</button>
+    <button class="tab" role="tab" type="button" data-tab="agents" aria-selected="false">Agentes y automatizaciones</button>
+    <button class="tab" role="tab" type="button" data-tab="research" aria-selected="false">Investigación</button>
+    <button class="tab" role="tab" type="button" data-tab="email" aria-selected="false">Correo</button>
+    <button class="tab" role="tab" type="button" data-tab="calendar" aria-selected="false">Calendario y tareas</button>
+    <button class="tab" role="tab" type="button" data-tab="sources" aria-selected="false">Documentos y fuentes</button>
+    <button class="tab" role="tab" type="button" data-tab="memory" aria-selected="false">Memoria</button>
+    <button class="tab" role="tab" type="button" data-tab="channels" aria-selected="false">Canales</button>
+    <button class="tab" role="tab" type="button" data-tab="tools" aria-selected="false">Herramientas</button>
+    <button class="tab" role="tab" type="button" data-tab="models" aria-selected="false">Modelos</button>
+    <button class="tab" role="tab" type="button" data-tab="settings" aria-selected="false">Configuración</button>
+    <button class="tab" role="tab" type="button" data-tab="status" aria-selected="false">Estado</button>
+    <button class="tab" role="tab" type="button" data-tab="logs" aria-selected="false">Registros</button>
+  </nav>
   <main class="stage">
     <aside class="telemetry" aria-label="Módulos principales">
       <button class="module-link" data-module="interface" type="button"><span>Interfaz</span><strong>Experiencia adaptativa</strong></button><div class="rule"></div>
@@ -324,6 +355,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
         <button id="voiceCancel" class="interrupt-control" type="button" hidden>Interrumpir</button>
         <button id="voiceHangup" class="call-control hangup" type="button" hidden>Colgar</button>
       </div>
+      <div id="voiceBlocked" class="voice-blocked" role="status" hidden></div>
     </div>
     <div class="version">{safe_version}<br>Privado por diseño</div>
   </footer>
@@ -366,9 +398,9 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       <button id="chatSend" class="primary" type="submit">Enviar</button></div>
   </form>
 </section>
-<section id="openjarvis" aria-label="Capacidades de Mark"><div class="oj-head"><h2>Capacidades de Mark</h2><span class="oj-engine">motor OpenJarvis</span>
+<section id="openjarvis" aria-label="Capacidades de Mark"><div class="oj-head"><span class="oj-engine">Capacidades de Mark · motor OpenJarvis</span>
   <span id="ojStatus" role="status"></span>
-  <button id="ojClose" class="close" type="button" aria-label="Volver a Mark">×</button></div>
+  <button id="ojClose" class="close" type="button" aria-label="Volver al inicio">×</button></div>
   <iframe id="ojFrame" title="Capacidades de Mark" referrerpolicy="no-referrer" allow="microphone; autoplay"></iframe></section>
 <aside id="drawer" aria-label="Sistemas y herramientas"><div class="drawer-head"><h2>Sistemas</h2>
   <button id="closeDrawer" class="close" type="button" aria-label="Cerrar">×</button></div><div id="tools"></div></aside>
@@ -478,6 +510,8 @@ const callMode=voiceMode==="call",busy=["transcribing","processing","speaking","
 $("voiceModeCall").classList.toggle("active",callMode);$("voiceModePtt").classList.toggle("active",!callMode);
 $("voiceModeCall").disabled=callActive||callStarting;$("voiceModePtt").disabled=callActive||callStarting;
 $("callStart").hidden=!callMode||callActive;$("callStart").disabled=unavailable||callStarting;
+const blocked=$("voiceBlocked"),missing=voice?.missing||[];blocked.hidden=!unavailable;
+blocked.textContent=!voice?"La voz no aparece en el catálogo local.":missing.length?"Llamada no disponible. Falta: "+missing.join(" · "):"";
 $("callStart").textContent=callStarting||currentState==="loading"?"Preparando llamada…":"Iniciar llamada";
 $("voiceMic").hidden=callMode;$("voiceMic").disabled=unavailable||!running||currentState!=="idle";
 $("voiceMute").hidden=!callActive;$("voiceMute").textContent=callMuted?"Reactivar micrófono":"Silenciar";
@@ -526,17 +560,40 @@ $("menu").addEventListener("click",()=>drawer.classList.add("open"));$("closeDra
 document.querySelectorAll("[data-module]").forEach(button=>button.addEventListener("click",()=>openModule(button.dataset.module)));
 $("closeModule").addEventListener("click",closeModule);modulePanel.addEventListener("click",event=>{{if(event.target===modulePanel)closeModule();}});
 modulePanel.addEventListener("click",event=>{{const button=event.target.closest("[data-quality]");if(button)setVisualQuality(button.dataset.quality);}});
-addEventListener("keydown",event=>{{if(event.key==="Escape"){{closeModule();drawer.classList.remove("open");coreOpen(false);document.body.classList.remove("oj-open");}}}});
-const ojOrigin="{oj_origin}",ojFrame=$("ojFrame"),ojStatus=$("ojStatus");let ojStarting=false;
-async function openOpenJarvis(){{document.body.classList.add("oj-open");
-const running=toolsCache.find(t=>t.id==="openjarvis")?.status==="running";if(!running)ojFrame.dataset.loaded="";
-if(ojFrame.dataset.loaded==="1"||ojStarting)return;ojStarting=true;ojStatus.textContent="Iniciando capacidades…";
+addEventListener("keydown",event=>{{if(event.key==="Escape"){{closeModule();drawer.classList.remove("open");coreOpen(false);if(document.body.classList.contains("oj-open"))selectTab("home");}}}});
+const ojOrigin="{oj_origin}",ojFrame=$("ojFrame"),ojStatus=$("ojStatus");
+// Pestañas de Mark → páginas reales de OpenJarvis (en modo ?shell=mark).
+const OJ_TABS={{agents:{{path:"/agents"}},research:{{path:"/",research:true}},email:{{path:"/data-sources?focus=email"}},
+calendar:{{path:"/data-sources?focus=calendar"}},sources:{{path:"/data-sources"}},memory:{{path:"/data-sources?tab=memory"}},
+channels:{{path:"/data-sources?tab=messaging"}},tools:{{path:"/settings?section=tools"}},models:{{path:"/settings?section=models"}},
+settings:{{path:"/settings"}},status:{{path:"/dashboard"}},logs:{{path:"/logs"}}}};
+let ojStarting=false,ojLoaded=false,ojPending=null;
+function ojSetState(state,text){{$("ojState").dataset.state=state;$("ojStateText").textContent=text;}}
+function ojUrl(path){{return ojOrigin+path+(path.includes("?")?"&":"?")+"shell=mark";}}
+function ojNavigate(tab){{if(toolsCache.find(t=>t.id==="openjarvis")?.status!=="running")ojLoaded=false;if(!ojLoaded){{ojPending=tab;ensureCapabilities();return;}}
+ojFrame.contentWindow.postMessage({{type:"mark:navigate",path:tab.path,research:tab.research===true}},ojOrigin);}}
+async function ensureCapabilities(){{const tool=toolsCache.find(t=>t.id==="openjarvis");
+if(ojStarting||(ojLoaded&&tool?.status==="running"))return;
+if(tool&&tool.status==="unavailable"){{ojSetState("error","OpenJarvis no disponible");ojStatus.textContent="Falta: "+(tool.missing||[]).join(" · ");return;}}
+ojStarting=true;ojLoaded=false;ojSetState("starting","OpenJarvis iniciando…");ojStatus.textContent="Iniciando capacidades…";
 try{{await toolAction("openjarvis","start");for(let i=0;i<120;i++){{if((await request("/api/openjarvis/ready")).ready){{
-ojFrame.src=ojOrigin+"/";ojFrame.dataset.loaded="1";ojStatus.textContent="";return;}}await new Promise(r=>setTimeout(r,1000));}}
-ojStatus.textContent="Las capacidades no respondieron. Revisa Sistemas → OpenJarvis.";}}
-catch(error){{ojStatus.textContent=error.message;}}finally{{ojStarting=false;}}}}
-$("ojToggle").addEventListener("click",openOpenJarvis);
-$("ojClose").addEventListener("click",()=>document.body.classList.remove("oj-open"));
+// Siempre se entra por "/": el servidor tiene páginas propias (p. ej. /dashboard)
+// que tapan las rutas de la interfaz en una carga directa; luego navega la SPA.
+ojFrame.src=ojUrl("/");return;}}await new Promise(r=>setTimeout(r,1000));}}
+ojSetState("error","OpenJarvis sin respuesta");ojStatus.textContent="Las capacidades no respondieron. Revisa Sistemas → OpenJarvis.";}}
+catch(error){{ojSetState("error","OpenJarvis con error");ojStatus.textContent=error.message;}}finally{{ojStarting=false;}}}}
+addEventListener("message",event=>{{if(event.origin!==ojOrigin||event.source!==ojFrame.contentWindow)return;
+if(event.data?.type==="mark:ready"){{ojLoaded=true;ojSetState("ready","OpenJarvis listo");ojStatus.textContent="";
+const tab=ojPending;ojPending=null;if(tab)ojFrame.contentWindow.postMessage({{type:"mark:navigate",path:tab.path,research:tab.research===true}},ojOrigin);}}}});
+function placeCapabilities(){{document.documentElement.style.setProperty("--oj-top",Math.round($("tabs").getBoundingClientRect().bottom)+"px");}}
+function selectTab(id){{for(const b of document.querySelectorAll(".tab"))b.setAttribute("aria-selected",String(b.dataset.tab===id));
+if(id==="home"||id==="chat"){{document.body.classList.remove("oj-open");if(id==="chat")chatOpen(true);return;}}
+placeCapabilities();document.body.classList.add("oj-open");ojNavigate(OJ_TABS[id]);}}
+for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>selectTab(b.dataset.tab));
+$("ojClose").addEventListener("click",()=>selectTab("home"));addEventListener("resize",placeCapabilities);
+addEventListener("load",placeCapabilities);if(window.ResizeObserver)new ResizeObserver(placeCapabilities).observe($("tabs"));placeCapabilities();
+// OpenJarvis arranca con Mark: así las pestañas responden al instante y sus automatizaciones corren.
+setTimeout(()=>loadTools().then(()=>ensureCapabilities()),1500);
 function bytesToBase64(buffer){{const bytes=new Uint8Array(buffer);let binary="";for(let offset=0;offset<bytes.length;offset+=32768){{
 binary+=String.fromCharCode(...bytes.subarray(offset,Math.min(offset+32768,bytes.length)));}}return btoa(binary);}}
 async function importVoiceFile(file){{if(file.size>24*1024*1024)throw new Error("El audio supera 24 MiB.");

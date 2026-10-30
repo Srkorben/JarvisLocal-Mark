@@ -8,8 +8,13 @@ import App from './App';
 import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
 import './index.css';
+import { inMarkShell } from './lib/markShell';
 
 function applyTheme() {
+  if (inMarkShell) {
+    document.documentElement.classList.add('dark', 'mark-shell');
+    return;
+  }
   try {
     const raw = localStorage.getItem('openjarvis-settings');
     const settings = raw ? JSON.parse(raw) : {};
