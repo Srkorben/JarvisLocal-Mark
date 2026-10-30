@@ -16,6 +16,15 @@ El asistente se llama siempre **Mark**: el prompt de sistema, la persona
 (`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
 `jarvis`) lo identifican así. Responde en español por defecto.
 
+## Acceso directo en el escritorio (Windows)
+
+Ejecuta `Crear-Acceso-Directo-Mark.bat` (doble clic). Si está dentro del
+repositorio, usa esa carpeta; si lo descargaste suelto, clona o actualiza el
+repositorio en `%USERPROFILE%\Documents\AI Local\JarvisLocal` (cámbialo con la
+variable `MARK_DIR`). Crea `Mark.lnk` en el escritorio, que abre
+`scripts\windows\Iniciar-Mark.bat`: interfaz gráfica (`mark gui`) si hay
+Node.js 22+, o chat de texto (`mark`) si no.
+
 ## Activar la voz de Mark
 
 `mark_voice` es el backend TTS predeterminado y el primero en la cadena de
