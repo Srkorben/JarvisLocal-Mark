@@ -1,0 +1,45 @@
+# Benchmarks
+
+El benchmark de Fase 1 inicia el `llama-server` configurado, mide carga, VRAM/RAM,
+TTFT y velocidad, ejecuta tres prompts en español, tres casos de tool calling y
+una cancelación durante generación con comprobación posterior de salud.
+
+```powershell
+.\.venv\Scripts\python.exe -m jarvis_local.benchmark
+```
+
+Los resultados JSON y Markdown incluyen el hash del modelo y quedan en `results/`.
+El resultado validado actual es
+[`results/qwen3-8b-q4_k_m-ctx8192.md`](results/qwen3-8b-q4_k_m-ctx8192.md).
+Las pruebas son pequeñas y reproducibles; no pretenden sustituir una evaluación
+extensa ni comparar modelos con metodologías diferentes.
+
+El benchmark de Fase 3 crea una base temporal, indexa cuatro documentos de
+`fixtures/rag`, ejecuta recuperación léxica, semántica e híbrida y comprueba la
+fuente, el texto esperado y la señal de prompt injection. También registra hash y
+tamaño del GGUF, latencias, RAM, una aproximación global de VRAM, tamaño SQLite y
+validez de auditoría.
+
+```powershell
+.\.venv\Scripts\python.exe -m jarvis_local.rag_benchmark
+```
+
+Resultado validado:
+[`results/rag-qwen3-embedding-0.6b-q8_0.md`](results/rag-qwen3-embedding-0.6b-q8_0.md).
+Las cuatro preguntas evitan depender del LLM generativo: evalúan recuperación y
+trazabilidad de forma determinista. No miden calidad universal ni escalabilidad.
+
+El benchmark de Fase 2 sintetiza cinco órdenes españolas, las transcribe y
+ejecuta un turno real sobre el mismo Core. Comprueba la selección y auditoría de
+`get_current_time`, TTFT y primer audio. La salida física solo se activa de forma
+explícita:
+
+```powershell
+.\.venv\Scripts\python.exe -m jarvis_local.audio_benchmark
+.\.venv\Scripts\python.exe -m jarvis_local.audio_benchmark --hardware-output
+```
+
+Piper→Whisper sirve como regresión reproducible, no como medición de una voz
+humana. El usuario rechazó la voz Piper y Chatterbox quedó seleccionado; su
+benchmark real exige primero enrolar la voz propia. Resultado actual:
+[`results/audio-phase2.md`](results/audio-phase2.md).

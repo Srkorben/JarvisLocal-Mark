@@ -1,44 +1,51 @@
 # Mark
 
-**Mark** es el asistente personal local de este repositorio. Desde esta versión,
-toda su arquitectura es [OpenJarvis](https://github.com/open-jarvis/OpenJarvis)
-(Apache-2.0, commit `c452da8`): agentes, motores de inferencia, memoria,
-herramientas, servidor, interfaz y escritorio. Lo único que se conserva del Mark
-anterior (JarvisLocal) es **la voz**:
+**Mark** (Mark Scout) es el asistente personal local de este repositorio: la
+app de escritorio de Windows de siempre (`runtime\desktop\JarvisLocal.exe`,
+WPF + WebView2), con su modo llamada, pulsar para hablar, panel **Núcleo**,
+módulos, **Sistemas**, memoria por proyecto, RAG, herramientas con política y
+auditoría, y **su propia voz**. Todo eso vive en `src/jarvis_local/`,
+`desktop/JarvisLocal.Desktop/`, `config/jarvis.toml` y `scripts/*.ps1`
+(documentación en [docs/mark/](docs/mark/)).
 
-- `voice/` — las muestras de voz originales de Mark;
-- `src/openjarvis/speech/mark_voice/` — el backend TTS `mark_voice`: Qwen3-TTS
-  Base 0.6B en un entorno Python aislado, clonación zero-shot desde la muestra,
-  perfil de muestreo aprobado (temperatura 0,65, top-k 30, semilla 42), control
-  de calidad anti-ruido y consentimiento ligado al SHA-256 de la muestra.
+## Upgrade: OpenJarvis
 
-El asistente se llama siempre **Mark**: el prompt de sistema, la persona
-(`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
-`jarvis`) lo identifican así. Responde en español por defecto.
+[OpenJarvis](https://github.com/open-jarvis/OpenJarvis) (Apache-2.0) está
+instalado completo en este repo (`src/openjarvis/`, `frontend/`, …) como upgrade
+de Mark, no como reemplazo:
 
-## Mark en el escritorio (Windows)
+- **Cerebro.** El orquestador de Mark consulta el modelo a través de los motores
+  de OpenJarvis (`[llm] provider = "openjarvis"`, motor `ollama`, modelo
+  `qwen3:8b`). Mark conserva su política, presupuestos, memoria y cancelación;
+  si Ollama no está corriendo, Mark lo inicia oculto. Para volver al
+  llama-server propio: `provider = "llama_cpp"` (ver el comentario en
+  `config/jarvis.toml`).
+- **Todo OpenJarvis dentro de Mark.** El botón **OpenJarvis** del encabezado abre,
+  dentro de la misma ventana, la interfaz completa de OpenJarvis: chat, agentes,
+  Deep Research, skills, fuentes de datos, canales, dashboard, logs y ajustes.
+  Se sirve solo en `127.0.0.1:8765`, sin login, y solo Mark puede incrustarla.
+  Se inicia y se detiene con Mark (también desde **Sistemas → OpenJarvis**).
+- **La voz de Mark en OpenJarvis.** El backend TTS `mark_voice` reutiliza la voz
+  ya enrolada de Mark (`.venv-qwen3-tts`, `models\qwen3-tts-…`,
+  `data\voices\user\`) y es la voz predeterminada de OpenJarvis.
+- **Siempre Mark.** El prompt de sistema, la persona
+  (`configs/openjarvis/prompts/personas/mark.md`) y el comando `mark` (alias de
+  `jarvis`) identifican al asistente como Mark, en español.
 
-Mark se usa como un programa de Windows: `mark-desktop.exe` abre una ventana
-nativa de chat (tkinter), sin consola, sin navegador, sin puertos y sin inicio
-de sesión. Todo corre en el mismo proceso contra el motor local (Ollama), con la
-persona de Mark. Incluye **Hablar** (micrófono → transcripción local),
-**Voz** (Mark lee sus respuestas con su propia voz) y **Nueva conversación**.
+## Instalar o actualizar (Windows)
 
-Para instalarlo, haz doble clic en `Crear-Acceso-Directo-Mark.bat`. Si está
-dentro del repositorio usa esa carpeta; si lo descargaste suelto, clona o
-actualiza el repositorio en `%USERPROFILE%\Documents\AI Local\JarvisLocal`
-(cámbialo con la variable `MARK_DIR`). Instala `uv` y las dependencias, instala
-Ollama y descarga `qwen3:8b` si no hay modelos, y crea `Mark.lnk` en el
-escritorio apuntando a `.venv\Scripts\mark-desktop.exe`.
+Doble clic en `Crear-Acceso-Directo-Mark.bat`. Usa (o clona) el repo en
+`%USERPROFILE%\Documents\AI Local\JarvisLocal` (variable `MARK_DIR`), cierra las
+instancias abiertas de Mark, instala dependencias con `uv` (Python 3.12),
+compila la interfaz de OpenJarvis con Node.js cuando cambia, asegura Ollama con
+`qwen3:8b`, publica `JarvisLocal.exe` si falta (.NET 8 SDK) y crea **Mark** en el
+escritorio. En terminal siguen disponibles `uv run mark` (OpenJarvis) y
+`uv run jarvis-local` (Mark).
 
-También puede abrirse con `uv run mark-desktop`; el chat por terminal sigue
-disponible con `uv run mark`.
+## Voz de Mark fuera de esta PC
 
-## Activar la voz de Mark
-
-`mark_voice` es el backend TTS predeterminado y el primero en la cadena de
-respaldo. Falla cerrado hasta que esté instalado y enrolado; mientras tanto,
-OpenJarvis usa Kokoro (`em_alex`, español) localmente.
+En tu PC la voz ya está enrolada y OpenJarvis la reutiliza. En otro equipo,
+`mark_voice` falla cerrado (OpenJarvis cae a Kokoro `em_alex`) hasta instalarla:
 
 Windows (CUDA):
 

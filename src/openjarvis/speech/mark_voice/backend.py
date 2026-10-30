@@ -71,6 +71,47 @@ def _default_reference(home: Path) -> Path:
     return home / "reference.wav"
 
 
+def _project_voice_paths(root: Optional[Path] = None) -> dict[str, Path]:
+    """Mark's already-enrolled voice from ``config/jarvis.toml`` [voice_clone].
+
+    When OpenJarvis runs inside the Mark repository, the desktop app's isolated
+    Qwen3-TTS env, model and consented reference are reused, so the voice does
+    not have to be installed or enrolled twice. Empty when absent.
+    """
+    root = root or Path(__file__).resolve().parents[4]
+    config = root / "config" / "jarvis.toml"
+    if not config.is_file():
+        return {}
+    try:
+        import tomllib
+    except ImportError:  # Python 3.10
+        import tomli as tomllib
+    try:
+        section = tomllib.loads(config.read_text(encoding="utf-8")).get(
+            "voice_clone", {}
+        )
+    except (OSError, ValueError):
+        return {}
+    keys = {
+        "python": "python",
+        "model_dir": "model_path",
+        "reference_path": "reference_path",
+        "reference_text_path": "reference_text_path",
+        "consent_path": "consent_path",
+    }
+    paths: dict[str, Path] = {}
+    for field_name, key in keys.items():
+        value = str(section.get(key) or "").replace("\\", "/")
+        if value:
+            candidate = Path(value)
+            paths[field_name] = (
+                candidate if candidate.is_absolute() else root / candidate
+            )
+    if "python" in paths and not paths["python"].is_file():
+        return {}  # Mark's voice env is not installed here.
+    return paths
+
+
 @dataclass(frozen=True)
 class MarkVoiceSettings:
     python: Path
@@ -91,8 +132,14 @@ class MarkVoiceSettings:
     seed: int = 42
 
     @classmethod
-    def from_config(cls, cfg: Any = None) -> "MarkVoiceSettings":
-        """Build settings from ``[speech.mark_voice]``, filling default paths."""
+    def from_config(
+        cls, cfg: Any = None, *, project_root: Optional[Path] = None
+    ) -> "MarkVoiceSettings":
+        """Build settings from ``[speech.mark_voice]``, filling default paths.
+
+        Precedence per path: explicit config, then the Mark desktop app's
+        enrolled voice (``config/jarvis.toml``), then ``<config-dir>/mark-voice``.
+        """
         if cfg is None:
             try:
                 from openjarvis.core.config import load_config
@@ -104,16 +151,27 @@ class MarkVoiceSettings:
 
                 cfg = MarkVoiceConfig()
         home = mark_voice_home()
+        project = _project_voice_paths(project_root)
 
-        def path(value: str, default: Path) -> Path:
-            return Path(value).expanduser() if value else default
+        def path(value: str, name: str, default: Path) -> Path:
+            if value:
+                return Path(value).expanduser()
+            return project.get(name, default)
 
         return cls(
-            python=path(cfg.python, _venv_python(home / ".venv")),
-            model_dir=path(cfg.model_dir, home / "models" / "qwen3-tts-12hz-0.6b-base"),
-            reference_path=path(cfg.reference_path, _default_reference(home)),
-            reference_text_path=path(cfg.reference_text_path, home / "reference.txt"),
-            consent_path=path(cfg.consent_path, home / "consent.json"),
+            python=path(cfg.python, "python", _venv_python(home / ".venv")),
+            model_dir=path(
+                cfg.model_dir,
+                "model_dir",
+                home / "models" / "qwen3-tts-12hz-0.6b-base",
+            ),
+            reference_path=path(
+                cfg.reference_path, "reference_path", _default_reference(home)
+            ),
+            reference_text_path=path(
+                cfg.reference_text_path, "reference_text_path", home / "reference.txt"
+            ),
+            consent_path=path(cfg.consent_path, "consent_path", home / "consent.json"),
             log_path=home / "logs" / "qwen3-tts-worker.log",
             device=cfg.device,
             language=cfg.language,

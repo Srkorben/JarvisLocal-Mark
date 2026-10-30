@@ -138,3 +138,37 @@ class TestSpeechHeaders:
         policy = SECURITY_HEADERS["Permissions-Policy"]
         assert "camera=()" in policy
         assert "geolocation=()" in policy
+
+
+class TestFrameAncestors:
+    """Mark embeds the UI from loopback only; everything else stays DENY."""
+
+    def _headers(self, monkeypatch, value):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        if value is None:
+            monkeypatch.delenv("OPENJARVIS_FRAME_ANCESTORS", raising=False)
+        else:
+            monkeypatch.setenv("OPENJARVIS_FRAME_ANCESTORS", value)
+        app = FastAPI()
+        app.add_middleware(create_security_middleware())
+        app.get("/x")(lambda: {"ok": True})
+        return TestClient(app).get("/x").headers
+
+    def test_default_denies_framing(self, monkeypatch) -> None:
+        headers = self._headers(monkeypatch, None)
+        assert headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors" not in headers["Content-Security-Policy"]
+
+    def test_loopback_ancestor_allows_mark_window(self, monkeypatch) -> None:
+        headers = self._headers(monkeypatch, "http://127.0.0.1:*")
+        assert "X-Frame-Options" not in headers
+        assert headers["Content-Security-Policy"].endswith(
+            "frame-ancestors http://127.0.0.1:*"
+        )
+
+    def test_non_loopback_ancestor_is_ignored(self, monkeypatch) -> None:
+        headers = self._headers(monkeypatch, "https://evil.example *")
+        assert headers["X-Frame-Options"] == "DENY"
+        assert "frame-ancestors" not in headers["Content-Security-Policy"]

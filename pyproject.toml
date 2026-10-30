@@ -33,6 +33,9 @@ dependencies = [
     "datasets>=4.5.0",
     "ddgs>=9.11.4",
     "httpx>=0.27",
+    # Mark (JarvisLocal): validated config/tool models and PDF RAG extraction.
+    "pydantic>=2.13.4,<3",
+    "pypdf>=6.19.0,<7",
     "openai>=1.30",
     "nvidia-ml-py>=12.560.30",
     "posthog>=3.0",
@@ -185,6 +188,12 @@ speech = [
     "soundfile>=0.12",
 ]
 speech-deepgram = ["deepgram-sdk>=3.0"]
+# Mark's own audio pipeline (call mode, push-to-talk, Piper fallback voice).
+mark-audio = [
+    "faster-whisper==1.2.1",
+    "piper-tts==1.8.0",
+    "sounddevice==0.5.6",
+]
 eval-wandb = ["wandb>=0.17"]
 eval-sheets = ["gspread>=6.0", "google-auth>=2.0"]
 mining-pearl-cpu = [
@@ -216,10 +225,7 @@ Issues = "https://github.com/open-jarvis/OpenJarvis/issues"
 mark = "openjarvis.cli:main"
 jarvis = "openjarvis.cli:main"
 openjarvis-eval = "openjarvis.evals.cli:main"
-
-# Native Mark window (no console): .venv\Scripts\mark-desktop.exe on Windows.
-[project.gui-scripts]
-mark-desktop = "openjarvis.mark_desktop.app:main"
+jarvis-local = "jarvis_local.cli:main"
 
 # Version is derived from git tags by hatch-vcs (see #526). For source/editable
 # checkouts this yields the true `git describe` version (e.g. 1.0.3.dev109+g<sha>)
@@ -260,7 +266,7 @@ exclude = [
 artifacts = ["/src/openjarvis/server/static/**"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openjarvis"]
+packages = ["src/openjarvis", "src/jarvis_local"]
 artifacts = ["/src/openjarvis/server/static/**"]
 exclude = [
     "/src/openjarvis/agents/claude_code_runner",
@@ -297,7 +303,13 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
 
+[tool.ruff.format]
+# Mark (JarvisLocal) keeps its own style (100-column lines).
+exclude = ["src/jarvis_local/**", "tests/mark/**"]
+
 [tool.ruff.lint.per-file-ignores]
+"src/jarvis_local/**" = ["E501", "I001", "F401"]
+"tests/mark/**" = ["E501", "I001", "F401"]
 "src/openjarvis/evals/datasets/*.py" = ["E501"]
 "src/openjarvis/evals/scorers/*.py" = ["E501"]
 # hybrid/ is research code with long prompt strings and paradigm-specific

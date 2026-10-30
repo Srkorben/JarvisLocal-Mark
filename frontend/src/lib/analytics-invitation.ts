@@ -1,5 +1,3 @@
-import { fetchAnalyticsIdentity } from './analytics';
-
 const ANALYTICS_SEEN_KEY = 'openjarvis-analytics-choice-seen';
 
 interface AnalyticsInvitation {
@@ -9,25 +7,16 @@ interface AnalyticsInvitation {
   markSharingModalSeen: () => void;
 }
 
-/** Offer the sharing dialog only after the app can actually display it. */
+/**
+ * Mark is a local assistant with no sign-up: the sharing/giveaway dialog is
+ * never opened on its own. It stays reachable from the system panel, and
+ * analytics remain off unless the user opts in there.
+ */
 export function offerAnalyticsChoice({
-  ready, sharingModalSeen, open, markSharingModalSeen,
+  ready, sharingModalSeen, markSharingModalSeen,
 }: AnalyticsInvitation): (() => void) | undefined {
   if (!ready) return;
-  if (!sharingModalSeen) {
-    open();
-    markSharingModalSeen();
-    localStorage.setItem(ANALYTICS_SEEN_KEY, 'true');
-    return;
-  }
-  if (localStorage.getItem(ANALYTICS_SEEN_KEY)) return;
-
-  // Existing users may have seen the older leaderboard-only dialog.
-  let active = true;
-  fetchAnalyticsIdentity().then((identity) => {
-    if (!active) return;
-    if (!identity.choice_recorded) open();
-    localStorage.setItem(ANALYTICS_SEEN_KEY, 'true');
-  }).catch(() => { /* Retry next launch if the server was unavailable. */ });
-  return () => { active = false; };
+  if (!sharingModalSeen) markSharingModalSeen();
+  localStorage.setItem(ANALYTICS_SEEN_KEY, 'true');
+  return undefined;
 }

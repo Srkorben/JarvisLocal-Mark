@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-09",
+  "hardware": "NVIDIA GeForce RTX 5060 Laptop GPU, 8151 MiB",
+  "driver": "616.92",
+  "torch": "2.9.1+cu128",
+  "cuda_arch": "sm_120",
+  "tts_model": "ResembleAI/Chatterbox-Multilingual-es-mx-latam",
+  "tts_revision": "27e595bf2fe7be0533ca299d9afafcde08b7cca7",
+  "llm": "Qwen3-8B-Q4_K_M.gguf",
+  "load_order": ["chatterbox_cuda", "llama_server_adaptive_offload"],
+  "voice_load_and_prime_seconds": 21.739,
+  "llm_load_seconds": 12.423,
+  "llm_first_token_seconds": 0.515,
+  "llm_tokens_per_second": 10.1095,
+  "tts_synthesis_seconds": 5.681,
+  "generated_audio_seconds": 4.4,
+  "global_vram_mib": {
+    "baseline": 1565,
+    "voice_loaded": 5268,
+    "voice_and_llm_loaded": 7533,
+    "after_generation": 7256
+  },
+  "cpu_baseline_observed_seconds_per_phrase": [42.0, 54.203],
+  "physical_playback_validation": {
+    "synthesis_seconds": 3.562,
+    "generated_audio_seconds": 3.28,
+    "wasapi_playback_seconds": 3.594,
+    "result": "ok"
+  },
+  "notes": [
+    "VRAM is global nvidia-smi usage, not per-process attribution under WDDM.",
+    "Measurements vary with desktop load, power and thermals.",
+    "The text profile still starts llama-server first and retains its original throughput."
+  ]
+}

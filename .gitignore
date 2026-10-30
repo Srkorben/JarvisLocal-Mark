@@ -131,3 +131,25 @@ learning.db
 minion_logs/
 *.oj-debug.json
 oj-debug.*.json
+
+# Mark (JarvisLocal): entornos aislados de voz, datos y artefactos locales
+.venv-chatterbox/
+.venv-chatterbox-cuda/
+.venv-xtts/
+.venv-qwen3-tts/
+.venv.incompatible-*/
+/data/
+/logs/
+/models/
+/runtime/
+/backups/
+config/jarvis.local.toml
+benchmarks/.tmp/
+desktop/JarvisLocal.Desktop/bin/
+desktop/JarvisLocal.Desktop/obj/
+integrations/godot/**/.godot/
+integrations/unity/**/Library/
+integrations/unity/**/Logs/
+integrations/unity/**/Temp/
+integrations/unity/**/UserSettings/
+integrations/unity/**/obj/

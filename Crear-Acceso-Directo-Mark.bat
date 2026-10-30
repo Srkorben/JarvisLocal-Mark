@@ -1,7 +1,7 @@
 @echo off
 rem Prepara Mark y crea (o actualiza) el acceso directo "Mark" en el escritorio.
-rem Mark abre como programa de Windows (mark-desktop.exe): sin navegador,
-rem sin puertos y sin inicio de sesion. Todo corre local.
+rem Mark abre como su programa de Windows de siempre (runtime\desktop\JarvisLocal.exe):
+rem sin navegador y sin inicio de sesion. Su cerebro es OpenJarvis (via Ollama).
 rem Puede ejecutarse desde la carpeta del repositorio o descargado suelto:
 rem en ese caso usa (o clona) el repositorio en MARK_DIR.
 setlocal EnableExtensions
@@ -13,7 +13,7 @@ set "DEFAULT_MODEL=qwen3:8b"
 if not defined MARK_DIR set "MARK_DIR=%USERPROFILE%\Documents\AI Local\JarvisLocal"
 
 rem 1) Si este .bat esta dentro del repositorio nuevo, usarlo tal cual.
-if exist "%~dp0src\openjarvis\mark_desktop\app.py" (
+if exist "%~dp0src\jarvis_local\model_providers\openjarvis_engine.py" (
     set "MARK_DIR=%~dp0."
     goto dependencias
 )
@@ -33,7 +33,7 @@ pushd "%MARK_DIR%" || goto error
 git fetch origin || goto error_pop
 rem Usar master si ya contiene el Mark nuevo; si no, la rama del cambio.
 set "BRANCH=%FEATURE_BRANCH%"
-git cat-file -e origin/master:src/openjarvis/mark_desktop/app.py 2>nul && set "BRANCH=master"
+git cat-file -e origin/master:src/jarvis_local/model_providers/openjarvis_engine.py 2>nul && set "BRANCH=master"
 echo Usando la rama %BRANCH%...
 git checkout "%BRANCH%" || goto error_pop
 git pull --ff-only origin "%BRANCH%" || goto error_pop
@@ -43,7 +43,7 @@ popd
 for %%I in ("%MARK_DIR%") do set "MARK_DIR=%%~fI"
 cd /d "%MARK_DIR%" || goto error
 
-rem 3) uv: gestor de Python (trae su propio Python con Tk).
+rem 3) uv: gestor de Python (usa Python 3.12, fijado en .python-version).
 where uv >nul 2>nul
 if errorlevel 1 (
     echo Instalando uv...
@@ -68,18 +68,45 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "if ($procs.Count) { Start-Sleep -Seconds 2 }"
 
 echo Instalando dependencias de Mark ^(la primera vez tarda unos minutos^)...
-uv sync --extra speech
+uv sync --extra mark-audio --extra server
 if errorlevel 1 (
     echo Reintentando en 5 segundos...
     timeout /t 5 /nobreak >nul
-    uv sync --extra speech || goto error_bloqueo
+    uv sync --extra mark-audio --extra server || goto error_bloqueo
 )
-if not exist "%MARK_DIR%\.venv\Scripts\mark-desktop.exe" (
-    echo No se genero mark-desktop.exe.
+if not exist "%MARK_DIR%\.venv\Scripts\pythonw.exe" (
+    echo No se creo el entorno de Python de Mark ^(.venv^).
     goto error
 )
 
-rem 4) Ollama: motor local de IA, con al menos un modelo.
+rem 4) Interfaz completa de OpenJarvis (boton "OpenJarvis" dentro de Mark).
+rem Se compila con Node.js solo cuando cambia el codigo de la interfaz.
+set "OJ_STAMP=%MARK_DIR%\src\openjarvis\server\static\.mark-build"
+set "OJ_TREE="
+for /f %%H in ('git -C "%MARK_DIR%" rev-parse HEAD:frontend 2^>nul') do set "OJ_TREE=%%H"
+set "OJ_BUILT="
+if exist "%OJ_STAMP%" set /p OJ_BUILT=<"%OJ_STAMP%"
+if exist "%MARK_DIR%\src\openjarvis\server\static\index.html" if defined OJ_TREE if "%OJ_BUILT%"=="%OJ_TREE%" goto ollama
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo Instalando Node.js ^(necesario para compilar la interfaz de OpenJarvis^)...
+    winget install -e --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements
+    set "PATH=%ProgramFiles%\nodejs;%PATH%"
+)
+where npm >nul 2>nul
+if errorlevel 1 (
+    echo No se pudo instalar Node.js. Instalalo desde https://nodejs.org y vuelve a ejecutar este archivo.
+    goto error
+)
+echo Compilando la interfaz de OpenJarvis ^(solo cuando cambia, tarda un par de minutos^)...
+pushd "%MARK_DIR%\frontend" || goto error
+call npx -y npm@11 ci --no-audit --no-fund || goto error_pop
+call npx -y npm@11 run build || goto error_pop
+popd
+if defined OJ_TREE (echo %OJ_TREE%>"%OJ_STAMP%")
+
+:ollama
+rem 5) Ollama: motor local de IA, con el modelo de Mark.
 set "OLLAMA=ollama"
 where ollama >nul 2>nul
 if errorlevel 1 set "OLLAMA=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
@@ -98,22 +125,33 @@ if errorlevel 1 (
     powershell -NoProfile -ExecutionPolicy Bypass -Command "$exe = $env:OLLAMA_PS; if ($exe -eq 'ollama') { $exe = (Get-Command ollama).Source }; Start-Process -FilePath $exe -ArgumentList 'serve' -WindowStyle Hidden"
     timeout /t 5 /nobreak >nul
 )
-"%OLLAMA%" list 2>nul | findstr /r /v "^NAME" | findstr /r "." >nul
+"%OLLAMA%" list 2>nul | findstr /b /i /c:"%DEFAULT_MODEL% " >nul
 if errorlevel 1 (
     echo Descargando el modelo %DEFAULT_MODEL% ^(unos 5 GB, solo la primera vez^)...
     "%OLLAMA%" pull %DEFAULT_MODEL% || goto error
 )
 
-rem 5) Acceso directo al ejecutable nativo.
+rem 6) La app de escritorio de Mark. Si no esta publicada, publicarla (.NET 8 SDK).
+if not exist "%MARK_DIR%\runtime\desktop\JarvisLocal.exe" (
+    echo Publicando la app de escritorio de Mark...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%MARK_DIR%\scripts\Publish-Desktop.ps1"
+)
+if not exist "%MARK_DIR%\runtime\desktop\JarvisLocal.exe" (
+    echo Falta runtime\desktop\JarvisLocal.exe. Instala .NET 8 SDK
+    echo ^(https://dotnet.microsoft.com/download/dotnet/8.0^) y vuelve a ejecutar este archivo.
+    goto error
+)
+
+rem 7) Acceso directo.
 set "MARK_DIR_PS=%MARK_DIR%"
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$dir = $env:MARK_DIR_PS;" ^
   "$desktop = [Environment]::GetFolderPath('Desktop');" ^
   "$lnk = Join-Path $desktop 'Mark.lnk';" ^
   "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk);" ^
-  "$s.TargetPath = Join-Path $dir '.venv\Scripts\mark-desktop.exe';" ^
+  "$s.TargetPath = Join-Path $dir 'runtime\desktop\JarvisLocal.exe';" ^
   "$s.WorkingDirectory = $dir;" ^
-  "$s.IconLocation = (Join-Path $dir 'assets\mark.ico') + ',0';" ^
+  "$s.IconLocation = (Join-Path $dir 'assets\mark-scout.ico') + ',0';" ^
   "$s.Description = 'Mark - asistente personal local';" ^
   "$s.Save();" ^
   "Write-Host ('Acceso directo creado: ' + $lnk)"

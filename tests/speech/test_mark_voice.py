@@ -165,3 +165,42 @@ def test_settings_default_paths_live_under_config_dir(tmp_path, monkeypatch):
         replace(MarkVoiceConfig(), device="cpu", seed=7)
     )
     assert (custom.device, custom.seed) == ("cpu", 7)
+
+
+def test_reuses_mark_desktop_enrolled_voice(tmp_path, monkeypatch):
+    from openjarvis.core.config import MarkVoiceConfig
+
+    monkeypatch.setattr(
+        "openjarvis.speech.mark_voice.backend.mark_voice_home",
+        lambda: tmp_path / "home",
+    )
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "jarvis.toml").write_text(
+        "[voice_clone]\n"
+        'python = ".venv-qwen3-tts\\\\Scripts\\\\python.exe"\n'
+        'model_path = "models\\\\qwen3-tts-12hz-0.6b-base"\n'
+        'reference_path = "data\\\\voices\\\\user\\\\reference-qwen.mp3"\n'
+        'reference_text_path = "data\\\\voices\\\\user\\\\reference.txt"\n'
+        'consent_path = "data\\\\voices\\\\user\\\\consent-qwen.json"\n',
+        encoding="utf-8",
+    )
+    # Voice env not installed: fall back to the OpenJarvis home.
+    settings = MarkVoiceSettings.from_config(MarkVoiceConfig(), project_root=tmp_path)
+    assert settings.consent_path == tmp_path / "home" / "consent.json"
+
+    python = tmp_path / ".venv-qwen3-tts" / "Scripts" / "python.exe"
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"")
+    settings = MarkVoiceSettings.from_config(MarkVoiceConfig(), project_root=tmp_path)
+    assert settings.python == python
+    assert settings.reference_path == (
+        tmp_path / "data" / "voices" / "user" / "reference-qwen.mp3"
+    )
+    assert settings.consent_path == (
+        tmp_path / "data" / "voices" / "user" / "consent-qwen.json"
+    )
+    explicit = MarkVoiceSettings.from_config(
+        replace(MarkVoiceConfig(), consent_path=str(tmp_path / "c.json")),
+        project_root=tmp_path,
+    )
+    assert explicit.consent_path == tmp_path / "c.json"

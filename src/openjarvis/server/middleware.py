@@ -2,9 +2,31 @@
 
 from __future__ import annotations
 
+import os
+import re
 from typing import Any
 
-__all__ = ["SECURITY_HEADERS", "create_security_middleware"]
+# Mark's desktop app shows the OpenJarvis UI inside its own loopback window.
+# Setting this to a CSP source list (e.g. ``http://127.0.0.1:*``) replaces
+# ``X-Frame-Options: DENY`` with ``frame-ancestors <sources>``. Unset = DENY.
+FRAME_ANCESTORS_ENV = "OPENJARVIS_FRAME_ANCESTORS"
+_LOOPBACK_SOURCE = re.compile(r"^https?://(127\.0\.0\.1|localhost)(:(\d{1,5}|\*))?$")
+
+
+def allowed_frame_ancestors() -> str:
+    """Return validated loopback-only frame ancestors from the env, or ``""``."""
+    sources = os.environ.get(FRAME_ANCESTORS_ENV, "").split()
+    if sources and all(_LOOPBACK_SOURCE.match(source) for source in sources):
+        return " ".join(sources)
+    return ""
+
+
+__all__ = [
+    "FRAME_ANCESTORS_ENV",
+    "SECURITY_HEADERS",
+    "allowed_frame_ancestors",
+    "create_security_middleware",
+]
 
 
 def create_security_middleware() -> Any:
@@ -30,6 +52,8 @@ def create_security_middleware() -> Any:
     except ImportError:
         return None
 
+    frame_ancestors = allowed_frame_ancestors()
+
     class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request: Request, call_next: Any) -> Response:
             # Let CORS preflight requests pass through without
@@ -39,7 +63,8 @@ def create_security_middleware() -> Any:
 
             response = await call_next(request)
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers["X-Frame-Options"] = "DENY"
+            if not frame_ancestors:
+                response.headers["X-Frame-Options"] = "DENY"
             response.headers["X-XSS-Protection"] = "1; mode=block"
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
@@ -55,7 +80,7 @@ def create_security_middleware() -> Any:
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self' 'unsafe-inline' 'unsafe-eval'; "
                 "media-src 'self' blob:"
-            )
+            ) + (f"; frame-ancestors {frame_ancestors}" if frame_ancestors else "")
             return response
 
     return SecurityHeadersMiddleware
