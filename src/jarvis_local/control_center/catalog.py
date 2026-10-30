@@ -56,6 +56,7 @@ def build_tool_catalog(
     voice_consent_path: Path | None = None,
     openjarvis_engine: str = "",
     openjarvis_model: str = "",
+    openjarvis_environment: tuple[tuple[str, str], ...] = (),
 ) -> dict[str, ToolSpec]:
     """Construye el catálogo cerrado que sustituye los nueve accesos originales.
 
@@ -210,7 +211,8 @@ def build_tool_catalog(
             ),
             exclusive_groups=("maintenance",),
             visible_console=False,
-            environment=(("OPENJARVIS_FRAME_ANCESTORS", "http://127.0.0.1:*"),),
+            environment=openjarvis_environment
+            or (("OPENJARVIS_FRAME_ANCESTORS", "http://127.0.0.1:*"),),
         ),
         script_tool(
             tool_id="chat_text",

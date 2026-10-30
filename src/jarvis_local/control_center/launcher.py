@@ -20,6 +20,7 @@ from ..database import Database
 from ..policy import PolicyEngine
 from ..process_lock import windows_singleton
 from ..projects import ProjectService
+from ..openjarvis_bridge import openjarvis_environment, prepare_openjarvis_home
 from .catalog import build_tool_catalog
 from .modules import build_module_snapshot
 from .runtime import ProcessManager
@@ -116,6 +117,13 @@ def serve() -> int:
         csrf_token = secrets.token_urlsafe(32)
         settings = Settings.load(root / "config" / "jarvis.toml")
         tts_provider, _ = settings.effective_tts
+        try:
+            openjarvis_env = openjarvis_environment(settings, prepare_openjarvis_home(settings))
+        except Exception:
+            # OpenJarvis es un upgrade: si su hogar no se puede preparar, el
+            # resto de Mark sigue funcionando y el panel queda sin política.
+            LOGGER.exception("No se pudo preparar el hogar de OpenJarvis.")
+            openjarvis_env = ()
         catalog = build_tool_catalog(
             root,
             voice_tts_provider=tts_provider,
@@ -125,6 +133,7 @@ def serve() -> int:
             voice_consent_path=settings.tts_clone_consent_path,
             openjarvis_engine=settings.openjarvis_engine,
             openjarvis_model=settings.model if settings.model_provider == "openjarvis" else "",
+            openjarvis_environment=openjarvis_env,
         )
         manager = ProcessManager(catalog)
         system_monitor = SystemStatusMonitor(settings, manager)

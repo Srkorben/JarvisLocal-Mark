@@ -134,6 +134,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     body.oj-open #openjarvis {{ display:flex; }}
     .oj-head {{ display:flex; align-items:center; gap:16px; padding:10px 18px; border-bottom:1px solid #15343e; }}
     .oj-head h2 {{ margin:0; text-transform:uppercase; letter-spacing:.18em; font-size:13px; }}
+    .oj-engine {{ color:#4e7985; text-transform:uppercase; letter-spacing:.14em; font-size:10px; }}
     #ojStatus {{ flex:1; color:var(--muted); font-size:12px; }}
     #ojFrame {{ flex:1; width:100%; border:0; background:#0b0f14; }}
     .drawer-head {{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #15343e;
@@ -282,7 +283,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     <div class="brand"><div class="sigil">M</div><span>Mark Scout</span></div>
     <div class="privacy"><span class="dot"></span><span>núcleo local · 127.0.0.1</span></div>
     <div class="controls"><button id="chatToggle" class="menu" type="button" aria-controls="chat" aria-expanded="false">Chat</button>
-      <button id="ojToggle" class="menu" type="button" aria-controls="openjarvis">OpenJarvis</button>
+      <button id="ojToggle" class="menu" type="button" aria-controls="openjarvis">Capacidades</button>
       <button id="menu" class="menu" type="button">Sistemas</button></div>
   </header>
   <main class="stage">
@@ -365,10 +366,10 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
       <button id="chatSend" class="primary" type="submit">Enviar</button></div>
   </form>
 </section>
-<section id="openjarvis" aria-label="OpenJarvis"><div class="oj-head"><h2>OpenJarvis</h2>
+<section id="openjarvis" aria-label="Capacidades de Mark"><div class="oj-head"><h2>Capacidades de Mark</h2><span class="oj-engine">motor OpenJarvis</span>
   <span id="ojStatus" role="status"></span>
   <button id="ojClose" class="close" type="button" aria-label="Volver a Mark">×</button></div>
-  <iframe id="ojFrame" title="OpenJarvis" referrerpolicy="no-referrer"></iframe></section>
+  <iframe id="ojFrame" title="Capacidades de Mark" referrerpolicy="no-referrer" allow="microphone; autoplay"></iframe></section>
 <aside id="drawer" aria-label="Sistemas y herramientas"><div class="drawer-head"><h2>Sistemas</h2>
   <button id="closeDrawer" class="close" type="button" aria-label="Cerrar">×</button></div><div id="tools"></div></aside>
 <section id="modulePanel" aria-label="Detalle del módulo" aria-hidden="true" inert>
@@ -529,10 +530,10 @@ addEventListener("keydown",event=>{{if(event.key==="Escape"){{closeModule();draw
 const ojOrigin="{oj_origin}",ojFrame=$("ojFrame"),ojStatus=$("ojStatus");let ojStarting=false;
 async function openOpenJarvis(){{document.body.classList.add("oj-open");
 const running=toolsCache.find(t=>t.id==="openjarvis")?.status==="running";if(!running)ojFrame.dataset.loaded="";
-if(ojFrame.dataset.loaded==="1"||ojStarting)return;ojStarting=true;ojStatus.textContent="Iniciando OpenJarvis…";
+if(ojFrame.dataset.loaded==="1"||ojStarting)return;ojStarting=true;ojStatus.textContent="Iniciando capacidades…";
 try{{await toolAction("openjarvis","start");for(let i=0;i<120;i++){{if((await request("/api/openjarvis/ready")).ready){{
 ojFrame.src=ojOrigin+"/";ojFrame.dataset.loaded="1";ojStatus.textContent="";return;}}await new Promise(r=>setTimeout(r,1000));}}
-ojStatus.textContent="OpenJarvis no respondió. Revisa Sistemas → OpenJarvis.";}}
+ojStatus.textContent="Las capacidades no respondieron. Revisa Sistemas → OpenJarvis.";}}
 catch(error){{ojStatus.textContent=error.message;}}finally{{ojStarting=false;}}}}
 $("ojToggle").addEventListener("click",openOpenJarvis);
 $("ojClose").addEventListener("click",()=>document.body.classList.remove("oj-open"));

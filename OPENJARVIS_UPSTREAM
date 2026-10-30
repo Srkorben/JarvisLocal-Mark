@@ -1,0 +1,3 @@
+# Versión de OpenJarvis integrada en Mark (la usa scripts/update_openjarvis.py)
+repo=https://github.com/open-jarvis/OpenJarvis
+commit=c452da822de0d0f37ed963c5aef823b1cc7fcb69

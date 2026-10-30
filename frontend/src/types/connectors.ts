@@ -122,7 +122,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'emails',
     steps: [
       {
-        label: 'Make sure 2-Step Verification is enabled, then generate a 16-character App Password (Mail / Other / "OpenJarvis"). Paste it below \u2014 spaces are fine, and use the app password, not your regular Gmail password.',
+        label: 'Make sure 2-Step Verification is enabled, then generate a 16-character App Password (Mail / Other / "Mark"). Paste it below \u2014 spaces are fine, and use the app password, not your regular Gmail password.',
         url: 'https://myaccount.google.com/apppasswords',
         urlLabel: 'How to get an app password \u2192',
       },
@@ -193,7 +193,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'messages',
     steps: [
       {
-        label: 'Go to api.slack.com/apps and click "Create New App" → choose "From scratch". Name it "OpenJarvis" and pick your workspace',
+        label: 'Go to api.slack.com/apps and click "Create New App" → choose "From scratch". Name it "Mark" and pick your workspace',
         url: 'https://api.slack.com/apps',
         urlLabel: 'Open Slack Apps',
       },
@@ -230,7 +230,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'pages',
     steps: [
       {
-        label: 'Go to notion.so/profile/integrations → click "+ New integration". Name it "OpenJarvis", select your workspace, and click Submit',
+        label: 'Go to notion.so/profile/integrations → click "+ New integration". Name it "Mark", select your workspace, and click Submit',
         url: 'https://www.notion.so/profile/integrations',
         urlLabel: 'Open Notion Integrations',
       },
@@ -238,7 +238,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
         label: 'Copy the "Internal Integration Secret" (starts with ntn_) and paste it below',
       },
       {
-        label: 'To share ALL your pages at once: open any top-level page → click "..." (top right) → "Connections" → "Add connections" → search "OpenJarvis" → click it. This shares the page and all its sub-pages. Repeat for each top-level page, or share your entire workspace by doing this on every root page',
+        label: 'To share ALL your pages at once: open any top-level page → click "..." (top right) → "Connections" → "Add connections" → search "Mark" → click it. This shares the page and all its sub-pages. Repeat for each top-level page, or share your entire workspace by doing this on every root page',
       },
       {
         label: 'Tip: if you have a single top-level page that contains everything, sharing just that one page will share all nested sub-pages automatically',
@@ -322,7 +322,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'files',
     steps: [
       {
-        label: 'Go to Google Cloud Console → create a new project (or select an existing one). Give it any name (e.g. "OpenJarvis")',
+        label: 'Go to Google Cloud Console → create a new project (or select an existing one). Give it any name (e.g. "Mark")',
         url: 'https://console.cloud.google.com/projectcreate',
         urlLabel: 'Create Project',
       },
@@ -467,7 +467,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'emails',
     steps: [
       {
-        label: 'Go to the Azure Portal → App Registrations → click "+ New registration". Name it "OpenJarvis", select "Accounts in this organizational directory only", and click Register',
+        label: 'Go to the Azure Portal → App Registrations → click "+ New registration". Name it "Mark", select "Accounts in this organizational directory only", and click Register',
         url: 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
         urlLabel: 'Open Azure App Registrations',
       },
@@ -497,7 +497,7 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
     unitLabel: 'files',
     steps: [
       {
-        label: 'Go to the Dropbox App Console and click "Create app". Choose "Scoped access" → "Full Dropbox" → give it a name (e.g. "OpenJarvis") → click "Create app"',
+        label: 'Go to the Dropbox App Console and click "Create app". Choose "Scoped access" → "Full Dropbox" → give it a name (e.g. "Mark") → click "Create app"',
         url: 'https://www.dropbox.com/developers/apps/create',
         urlLabel: 'Open Dropbox App Console',
       },

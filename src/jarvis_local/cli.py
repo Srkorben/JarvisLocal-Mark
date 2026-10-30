@@ -206,6 +206,28 @@ async def run_doctor(
     return 1 if failures else 0
 
 
+async def _release_llm_vram_for_voice(settings: Settings) -> None:
+    """Con Ollama, la voz en CUDA reserva VRAM antes que el LLM.
+
+    llama-server se iniciaba después del TTS y calculaba su offload sobre la
+    memoria restante. Ollama puede tener el modelo ya residente (panel de chat,
+    OpenJarvis): se descarga para que la voz cargue primero y Ollama vuelva a
+    ajustar las capas en la siguiente petición.
+    """
+
+    _, tts_device = settings.effective_tts
+    uses_ollama = settings.model_provider == "ollama" or (
+        settings.model_provider == "openjarvis" and settings.openjarvis_engine in ("", "ollama")
+    )
+    if tts_device != "cuda" or not uses_ollama:
+        return
+    from .model_providers.ollama_launcher import release_loaded_models
+
+    released = await asyncio.to_thread(release_loaded_models, settings.model_base_url)
+    if released:
+        print("VRAM liberada para la voz: " + ", ".join(released), flush=True)
+
+
 async def async_main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     settings = Settings.load(args.config)
@@ -647,6 +669,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         from .audio import create_stt_provider, create_tts_provider
 
         print("Cargando STT y TTS locales…", flush=True)
+        await _release_llm_vram_for_voice(settings)
         try:
             voice_stt = create_stt_provider(settings)
             voice_tts = create_tts_provider(settings)

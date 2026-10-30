@@ -100,4 +100,42 @@ def ensure_ollama(
     return False
 
 
-__all__ = ["ensure_ollama", "find_ollama", "ollama_host", "ollama_running"]
+
+
+def release_loaded_models(host: str, timeout: float = 10.0) -> list[str]:
+    """Descarga de la GPU los modelos que Ollama tenga residentes.
+
+    La voz de Mark en CUDA debe reservar su memoria antes que el LLM (mismo
+    criterio que con llama-server): con la VRAM libre, Ollama vuelve a cargar
+    el modelo en la siguiente petición ajustando las capas a lo que quede.
+    """
+    import httpx
+
+    try:
+        running = httpx.get(f"{host}/api/ps", timeout=timeout).json().get("models", [])
+    except (httpx.HTTPError, ValueError):
+        return []
+    released: list[str] = []
+    for item in running:
+        name = str(item.get("name") or item.get("model") or "")
+        if not name:
+            continue
+        try:
+            httpx.post(
+                f"{host}/api/generate",
+                json={"model": name, "keep_alive": 0},
+                timeout=timeout,
+            ).raise_for_status()
+            released.append(name)
+        except httpx.HTTPError:
+            continue
+    return released
+
+
+__all__ = [
+    "ensure_ollama",
+    "find_ollama",
+    "ollama_host",
+    "ollama_running",
+    "release_loaded_models",
+]

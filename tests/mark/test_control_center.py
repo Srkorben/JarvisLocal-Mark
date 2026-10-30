@@ -402,7 +402,8 @@ class HTTPTests(TestCase):
         csp = headers["Content-Security-Policy"]
         self.assertIn("frame-src http://127.0.0.1:8765;", csp)
         self.assertIn("frame-ancestors 'none'", csp)
-        for marker in (b'id="ojToggle"', b'id="ojFrame"', b'const ojOrigin="http://127.0.0.1:8765"'):
+        for marker in (b'id="ojToggle"', b'id="ojFrame"', b'allow="microphone; autoplay"',
+                       'Capacidades de Mark'.encode(), b'const ojOrigin="http://127.0.0.1:8765"'):
             self.assertIn(marker, body)
 
         status, _, _ = self.request("GET", "/api/openjarvis/ready")

@@ -47,7 +47,12 @@ class OpenJarvisProvider(ModelProvider):
         from openjarvis.core.config import load_config
         from openjarvis.engine import get_engine
 
-        config = load_config()
+        # Misma configuración que el panel OpenJarvis de Mark (hogar propio en
+        # data/openjarvis); sin ella, la instalación de OpenJarvis del usuario.
+        from ..openjarvis_bridge import CONFIG_FILE, openjarvis_home
+
+        mark_config = openjarvis_home(self.settings) / CONFIG_FILE
+        config = load_config(mark_config) if mark_config.is_file() else load_config()
         if self._engine_name in ("", "ollama"):
             from .ollama_launcher import ensure_ollama
 
