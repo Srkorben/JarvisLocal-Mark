@@ -55,8 +55,25 @@ if errorlevel 1 (
     echo No se pudo instalar uv. Instalalo desde https://docs.astral.sh/uv/
     goto error
 )
+rem Cerrar instancias de Mark abiertas (bloquean mark.exe durante la instalacion).
+rem Solo se detienen procesos que se ejecutan desde la .venv de esta carpeta.
+set "MARK_VENV_PS=%MARK_DIR%\.venv\"
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$venv = $env:MARK_VENV_PS;" ^
+  "$all = Get-CimInstance Win32_Process;" ^
+  "$ids = @($all | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($venv, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { $_.ProcessId });" ^
+  "do { $n = $ids.Count; $ids = @($ids + @($all | Where-Object { $ids -contains $_.ParentProcessId } | ForEach-Object { $_.ProcessId }) | Select-Object -Unique) } while ($ids.Count -gt $n);" ^
+  "$procs = @($all | Where-Object { $ids -contains $_.ProcessId });" ^
+  "foreach ($p in $procs) { Write-Host ('Cerrando ' + $p.Name + ' (PID ' + $p.ProcessId + ')'); Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue };" ^
+  "if ($procs.Count) { Start-Sleep -Seconds 2 }"
+
 echo Instalando dependencias de Mark ^(la primera vez tarda unos minutos^)...
-uv sync --extra speech || goto error
+uv sync --extra speech
+if errorlevel 1 (
+    echo Reintentando en 5 segundos...
+    timeout /t 5 /nobreak >nul
+    uv sync --extra speech || goto error_bloqueo
+)
 if not exist "%MARK_DIR%\.venv\Scripts\mark-desktop.exe" (
     echo No se genero mark-desktop.exe.
     goto error
@@ -104,6 +121,13 @@ echo.
 echo Listo. Abre Mark con el icono "Mark" del escritorio.
 pause
 exit /b 0
+
+:error_bloqueo
+echo.
+echo Algun archivo de Mark sigue en uso. Cierra cualquier ventana o consola de Mark
+echo ^(o reinicia el PC^) y vuelve a ejecutar este archivo.
+pause
+exit /b 1
 
 :error_pop
 popd
