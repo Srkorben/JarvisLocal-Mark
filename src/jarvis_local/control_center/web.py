@@ -5,11 +5,13 @@ import html
 from .catalog import OPENJARVIS_ORIGIN
 
 
-def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
+def render_dashboard(
+    *, csrf_token: str, nonce: str, version: str, openjarvis_origin: str = OPENJARVIS_ORIGIN
+) -> str:
     csrf = html.escape(csrf_token, quote=True)
     safe_nonce = html.escape(nonce, quote=True)
     safe_version = html.escape(version, quote=True)
-    oj_origin = html.escape(OPENJARVIS_ORIGIN, quote=True)
+    oj_origin = html.escape(openjarvis_origin, quote=True)
     return f"""<!doctype html>
 <html lang="es">
 <head>
@@ -43,6 +45,12 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     .menu {{ border:1px solid #1b4452; background:#061117aa; color:#a8c6d0; padding:9px 13px;
       border-radius:3px; cursor:pointer; text-transform:uppercase; font-size:11px; letter-spacing:.12em; }}
     .menu:hover,.menu:focus-visible {{ color:white; border-color:var(--cyan); outline:none; }}
+    .controls {{ display:flex; gap:10px; align-items:center; }}
+    .power {{ display:inline-flex; align-items:center; gap:8px; }}
+    .power svg {{ width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; }}
+    .power[data-state="on"] {{ color:#02080b; background:var(--cyan); border-color:var(--cyan); box-shadow:0 0 22px #19bce577; }}
+    .power[data-state="starting"] {{ color:#f5c26b; border-color:#f5a524; }}
+    .power:disabled {{ opacity:.6; cursor:progress; }}
     .stage {{ min-height:0; display:grid; grid-template-columns:minmax(230px,1fr) minmax(360px,640px) minmax(230px,1fr);
       align-items:center; gap:clamp(16px,4vw,70px); }}
     .telemetry {{ align-self:center; color:#75909a; font-size:11px; letter-spacing:.11em;
@@ -298,7 +306,9 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
     <div class="brand"><div class="sigil">M</div><span>Mark Scout</span></div>
     <div class="status-group"><div class="privacy"><span class="dot"></span><span>núcleo local · 127.0.0.1</span></div>
       <span id="ojState" class="tab-status" data-state="off" role="status"><span class="dot"></span><span id="ojStateText">OpenJarvis apagado</span></span></div>
-    <div class="controls"><button id="chatToggle" class="menu" type="button" aria-controls="chat" aria-expanded="false">Chat</button>
+    <div class="controls"><button id="power" class="menu power" type="button" data-state="off" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v8M6.3 6.6a8 8 0 1 0 11.4 0"></path></svg><span id="powerLabel">Encender Mark</span></button>
+      <button id="chatToggle" class="menu" type="button" aria-controls="chat" aria-expanded="false">Chat</button>
       <button id="menu" class="menu" type="button">Sistemas</button></div>
   </header>
   <nav id="tabs" class="tabs" role="tablist" aria-label="Secciones de Mark">
@@ -400,6 +410,7 @@ def render_dashboard(*, csrf_token: str, nonce: str, version: str) -> str:
 </section>
 <section id="openjarvis" aria-label="Capacidades de Mark"><div class="oj-head"><span class="oj-engine">Capacidades de Mark · motor OpenJarvis</span>
   <span id="ojStatus" role="status"></span>
+  <button id="ojRetry" class="menu" type="button" hidden>Reintentar</button>
   <button id="ojClose" class="close" type="button" aria-label="Volver al inicio">×</button></div>
   <iframe id="ojFrame" title="Capacidades de Mark" referrerpolicy="no-referrer" allow="microphone; autoplay"></iframe></section>
 <aside id="drawer" aria-label="Sistemas y herramientas"><div class="drawer-head"><h2>Sistemas</h2>
@@ -452,7 +463,7 @@ $("userLine").classList.toggle("visible",Boolean(p.transcript));$("jarvisLine").
 let presenceFailures=0;
 async function loadPresence(){{try{{const data=await request("/api/voice/presence");presenceFailures=0;setPresence(data.presence);}}
 catch(_){{presenceFailures++;if(presenceFailures>=8)chatDisconnected();else return;setPresence({{state:"offline"}});}}}}
-async function loadTools(){{try{{const data=await request("/api/tools");toolsCache=data.tools;renderTools();
+async function loadTools(){{try{{const data=await request("/api/tools");toolsCache=data.tools;renderTools();if(typeof updatePower==="function")updatePower();
 const voice=toolsCache.find(t=>t.id==="voice"),running=voice?.status==="running";
 updateVoiceControls();chatRuntimeLabel();renderCoreControls();}}
 catch(error){{tell(error.message);}}}}
@@ -572,28 +583,52 @@ function ojSetState(state,text){{$("ojState").dataset.state=state;$("ojStateText
 function ojUrl(path){{return ojOrigin+path+(path.includes("?")?"&":"?")+"shell=mark";}}
 function ojNavigate(tab){{if(toolsCache.find(t=>t.id==="openjarvis")?.status!=="running")ojLoaded=false;if(!ojLoaded){{ojPending=tab;ensureCapabilities();return;}}
 ojFrame.contentWindow.postMessage({{type:"mark:navigate",path:tab.path,research:tab.research===true}},ojOrigin);}}
-async function ensureCapabilities(){{const tool=toolsCache.find(t=>t.id==="openjarvis");
+let ojWatchdog=0,ojAttempted=false;
+function ojFail(text,detail){{ojSetState("error",text);ojStatus.textContent=detail||"";$("ojRetry").hidden=false;updatePower();}}
+async function ensureCapabilities(){{ojAttempted=true;const tool=toolsCache.find(t=>t.id==="openjarvis");
 if(ojStarting||(ojLoaded&&tool?.status==="running"))return;
-if(tool&&tool.status==="unavailable"){{ojSetState("error","OpenJarvis no disponible");ojStatus.textContent="Falta: "+(tool.missing||[]).join(" · ");return;}}
-ojStarting=true;ojLoaded=false;ojSetState("starting","OpenJarvis iniciando…");ojStatus.textContent="Iniciando capacidades…";
-try{{await toolAction("openjarvis","start");for(let i=0;i<120;i++){{if((await request("/api/openjarvis/ready")).ready){{
+if(tool&&tool.status==="unavailable"){{ojFail("OpenJarvis no disponible","Falta: "+(tool.missing||[]).join(" · "));return;}}
+ojStarting=true;ojLoaded=false;$("ojRetry").hidden=true;ojSetState("starting","OpenJarvis iniciando…");ojStatus.textContent="Iniciando capacidades (y Ollama si hace falta)…";updatePower();
+try{{await toolAction("openjarvis","start");for(let i=0;i<120;i++){{const state=await request("/api/openjarvis/ready");
+if(state.ready){{
 // Siempre se entra por "/": el servidor tiene páginas propias (p. ej. /dashboard)
 // que tapan las rutas de la interfaz en una carga directa; luego navega la SPA.
-ojFrame.src=ojUrl("/");return;}}await new Promise(r=>setTimeout(r,1000));}}
-ojSetState("error","OpenJarvis sin respuesta");ojStatus.textContent="Las capacidades no respondieron. Revisa Sistemas → OpenJarvis.";}}
-catch(error){{ojSetState("error","OpenJarvis con error");ojStatus.textContent=error.message;}}finally{{ojStarting=false;}}}}
+ojFrame.src=ojUrl("/");clearTimeout(ojWatchdog);
+ojWatchdog=setTimeout(()=>{{if(!ojLoaded)ojFail("OpenJarvis no cargó","La interfaz de OpenJarvis no terminó de cargar. Pulsa Reintentar o revisa data\\logs\\tools\\openjarvis.log.");}},30000);return;}}
+// Se cerró, o responde algo que no es el OpenJarvis de Mark: decir la causa y parar.
+if(state.detail&&(state.running===false||state.reachable)){{ojFail("OpenJarvis con error",state.detail);return;}}
+await new Promise(r=>setTimeout(r,1000));}}
+ojFail("OpenJarvis sin respuesta","OpenJarvis no respondió en 2 minutos. Revisa data\\logs\\tools\\openjarvis.log.");}}
+catch(error){{ojFail("OpenJarvis con error",error.message);}}finally{{ojStarting=false;updatePower();}}}}
 addEventListener("message",event=>{{if(event.origin!==ojOrigin||event.source!==ojFrame.contentWindow)return;
-if(event.data?.type==="mark:ready"){{ojLoaded=true;ojSetState("ready","OpenJarvis listo");ojStatus.textContent="";
+if(event.data?.type==="mark:ready"){{ojLoaded=true;clearTimeout(ojWatchdog);$("ojRetry").hidden=true;ojSetState("ready","OpenJarvis listo");ojStatus.textContent="";updatePower();
 const tab=ojPending;ojPending=null;if(tab)ojFrame.contentWindow.postMessage({{type:"mark:navigate",path:tab.path,research:tab.research===true}},ojOrigin);}}}});
 function placeCapabilities(){{document.documentElement.style.setProperty("--oj-top",Math.round($("tabs").getBoundingClientRect().bottom)+"px");}}
 function selectTab(id){{for(const b of document.querySelectorAll(".tab"))b.setAttribute("aria-selected",String(b.dataset.tab===id));
 if(id==="home"||id==="chat"){{document.body.classList.remove("oj-open");if(id==="chat")chatOpen(true);return;}}
 placeCapabilities();document.body.classList.add("oj-open");ojNavigate(OJ_TABS[id]);}}
 for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>selectTab(b.dataset.tab));
-$("ojClose").addEventListener("click",()=>selectTab("home"));addEventListener("resize",placeCapabilities);
+$("ojClose").addEventListener("click",()=>selectTab("home"));
+$("ojRetry").addEventListener("click",async()=>{{ojLoaded=false;ojFrame.src="about:blank";await loadTools();ensureCapabilities();}});
+// Botón de encendido: núcleo de conversación (modelo cargado) + OpenJarvis.
+let powerBusy=false;
+function toolRunning(id){{return toolsCache.find(t=>t.id===id)?.status==="running";}}
+function markPowered(){{return toolRunning("chat_runtime")||toolRunning("voice");}}
+function updatePower(){{const button=$("power");if(!button)return;const on=markPowered();
+const state=powerBusy||ojStarting?"starting":on?"on":"off";button.dataset.state=state;button.setAttribute("aria-pressed",String(on));
+button.disabled=powerBusy;$("powerLabel").textContent=state==="starting"?"Encendiendo…":on?"Mark encendido":"Encender Mark";
+button.title=on?"Apagar Mark: descarga el modelo y detiene OpenJarvis":"Encender Mark: carga el modelo y OpenJarvis";}}
+async function powerOn(){{powerBusy=true;updatePower();try{{await loadTools();
+if(!toolRunning("voice")&&!toolRunning("chat_runtime"))await toolAction("chat_runtime","start");
+tell("Mark encendido: cargando el modelo local.");ensureCapabilities();}}
+catch(error){{tell(error.message);}}finally{{powerBusy=false;await loadTools();updatePower();}}}}
+async function powerOff(){{powerBusy=true;updatePower();try{{for(const id of ["voice","chat_runtime","openjarvis"])
+if(toolRunning(id))await toolAction(id,"stop");ojLoaded=false;ojFrame.src="about:blank";ojSetState("off","OpenJarvis apagado");
+selectTab("home");tell("Mark apagado.");}}catch(error){{tell(error.message);}}finally{{powerBusy=false;await loadTools();updatePower();}}}}
+$("power").addEventListener("click",()=>markPowered()?powerOff():powerOn());addEventListener("resize",placeCapabilities);
 addEventListener("load",placeCapabilities);if(window.ResizeObserver)new ResizeObserver(placeCapabilities).observe($("tabs"));placeCapabilities();
 // OpenJarvis arranca con Mark: así las pestañas responden al instante y sus automatizaciones corren.
-setTimeout(()=>loadTools().then(()=>ensureCapabilities()),1500);
+setTimeout(()=>loadTools().then(()=>{{if(!ojAttempted)ensureCapabilities();}}),1500);
 function bytesToBase64(buffer){{const bytes=new Uint8Array(buffer);let binary="";for(let offset=0;offset<bytes.length;offset+=32768){{
 binary+=String.fromCharCode(...bytes.subarray(offset,Math.min(offset+32768,bytes.length)));}}return btoa(binary);}}
 async function importVoiceFile(file){{if(file.size>24*1024*1024)throw new Error("El audio supera 24 MiB.");

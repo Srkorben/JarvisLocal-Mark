@@ -85,7 +85,7 @@ class CatalogTests(TestCase):
                 spec.arguments,
                 (
                     "-m", "openjarvis.cli", "serve", "--host", "127.0.0.1",
-                    "--port", "8765", "--engine", "ollama", "--model", "qwen3:8b",
+                    "--port", "8790", "--engine", "ollama", "--model", "qwen3:8b",
                 ),
             )
             self.assertFalse(spec.visible_console)
@@ -426,10 +426,10 @@ class HTTPTests(TestCase):
         status, headers, body = self.request("GET", "/", headers=self.authenticated_headers())
         self.assertEqual(status, 200)
         csp = headers["Content-Security-Policy"]
-        self.assertIn("frame-src http://127.0.0.1:8765;", csp)
+        self.assertIn("frame-src http://127.0.0.1:8790;", csp)
         self.assertIn("frame-ancestors 'none'", csp)
         markers = [b'id="tabs"', b'id="ojFrame"', b'allow="microphone; autoplay"', b'id="ojState"',
-                   'Capacidades de Mark'.encode(), b'const ojOrigin="http://127.0.0.1:8765"',
+                   'Capacidades de Mark'.encode(), b'const ojOrigin="http://127.0.0.1:8790"', b'id="power"', b'id="ojRetry"',
                    b'type:"mark:navigate"', b'shell=mark']
         for tab in ("home", "chat", "agents", "research", "email", "calendar", "sources",
                     "memory", "channels", "tools", "models", "settings", "status", "logs"):
@@ -439,14 +439,14 @@ class HTTPTests(TestCase):
 
         status, _, _ = self.request("GET", "/api/openjarvis/ready")
         self.assertEqual(status, 401)
-        with patch("jarvis_local.control_center.server._openjarvis_ready", return_value=True):
+        healthy = {"ready": True, "reachable": True, "framable": True, "detail": ""}
+        with patch("jarvis_local.control_center.server._openjarvis_diagnose", return_value=healthy):
             status, _, body = self.request(
                 "GET", "/api/openjarvis/ready", headers=self.authenticated_headers()
             )
         self.assertEqual(status, 200)
-        self.assertEqual(
-            json.loads(body), {"ready": True, "origin": "http://127.0.0.1:8765"}
-        )
+        state = json.loads(body)
+        self.assertEqual((state["ready"], state["origin"]), (True, "http://127.0.0.1:8790"))
 
     def test_loopback_authentication_security_headers_and_api(self) -> None:
         self.assertEqual(self.server.server_address[0], "127.0.0.1")

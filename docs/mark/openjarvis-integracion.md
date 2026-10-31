@@ -9,10 +9,10 @@ dentro de la misma ventana en **Capacidades de Mark**.
 
 | Capa | Qué hace | Dónde |
 | --- | --- | --- |
-| Ventana | WPF + WebView2; solo navega al centro de control en `127.0.0.1`; niega todo permiso web salvo el micrófono para el panel de capacidades (`127.0.0.1:8765`) | `desktop/JarvisLocal.Desktop/` |
+| Ventana | WPF + WebView2; solo navega al centro de control en `127.0.0.1`; niega todo permiso web salvo el micrófono para el panel de capacidades (`127.0.0.1`, puerto propio desde 8790) | `desktop/JarvisLocal.Desktop/` |
 | Centro de control | Chat, modo llamada, Núcleo, módulos, Sistemas; catálogo cerrado de procesos | `src/jarvis_local/control_center/` |
 | Cerebro de Mark | Orquestador, política, presupuestos y auditoría de Mark; el modelo se consulta por el proveedor `openjarvis` (Ollama, `qwen3:8b`) | `src/jarvis_local/model_providers/openjarvis_engine.py` |
-| Capacidades | `jarvis serve` en `127.0.0.1:8765`, sin clave ni login, incrustado en la ventana; hogar propio en `data\openjarvis` | `src/jarvis_local/openjarvis_bridge.py` |
+| Capacidades | `jarvis serve` en `127.0.0.1` (puerto propio desde 8790), sin clave ni login, incrustado en la ventana; hogar propio en `data\openjarvis` | `src/jarvis_local/openjarvis_bridge.py` |
 | Voz | Qwen3-TTS aislado; OpenJarvis la usa como backend `mark_voice` con la misma muestra y consentimiento | `src/openjarvis/speech/mark_voice/` |
 
 ## Navegación: la pantalla de Mark es la puerta de entrada
@@ -48,6 +48,14 @@ automatizaciones programadas corren mientras Mark esté abierto.
 - **Regresión corregida:** con el panel de OpenJarvis abierto, "Iniciar llamada" y el chat fallaban con "entra en conflicto con OpenJarvis", porque compartían el grupo exclusivo `maintenance`. Ahora OpenJarvis convive con la voz y el chat, y solo choca con las tareas que reinstalan dependencias.
 - **Motivo visible:** si la llamada no está disponible, debajo del botón aparece exactamente qué falta (entorno de voz, modelo, muestra, transcripción o consentimiento).
 - **Diagnóstico sin cambios:** `python -m jarvis_local.control_center --voice-check` informa, sin modificar nada, el motor de voz, la muestra configurada y lo que falte. El instalador lo ejecuta y además comprueba que `.venv-qwen3-tts` carga el *worker* de voz.
+
+## Botón de encendido y servicios
+
+- **Encender Mark** carga el modelo local (núcleo de conversación) y OpenJarvis; **Apagar** detiene la voz, el núcleo y OpenJarvis. El botón muestra el estado: apagado, encendiendo o encendido.
+- **OpenJarvis tiene su propio puerto, desde el 8790.** El rango 8765–8774 es del centro de control de Mark; si ambos usaban el 8765, OpenJarvis no podía abrir su puerto y el panel mostraba la página de Mark, bloqueada (icono de prohibido). Si el 8790 está ocupado, se usa el siguiente libre.
+- **Instancias huérfanas.** Al arrancar, Mark cierra los servidores de OpenJarvis que hayan quedado vivos de una sesión anterior. En Windows, el árbol de procesos se cierra con `taskkill /T /F` cuando hace falta.
+- **Ollama primero.** Antes de iniciar OpenJarvis, Mark asegura que Ollama responda (lo inicia oculto si está instalado), porque `jarvis serve` se cierra si no hay motor.
+- **Errores con causa.** La salida de cada proceso oculto queda en `data\logs\tools\<herramienta>.log`. Si OpenJarvis se cierra, el panel muestra el motivo (por ejemplo "Ollama no responde…" o "se cerró al iniciar (código 1): …"), junto a un botón **Reintentar**. Si la interfaz no termina de cargar en 30 s, también se avisa.
 
 ## Seguridad: la política de Mark manda
 
@@ -94,7 +102,7 @@ archivo dentro de las raíces; leer `/etc/hostname` se negó por `allowed_dirs`;
 | Canales (31: Telegram, Discord, Slack, WhatsApp…) | Bloqueados: `channel:send` denegado |
 | Voz: STT faster-whisper | Instalado (extra `desktop`); no verificado con micrófono real |
 | Voz: TTS `mark_voice` | Probado con un worker simulado; Qwen3-TTS real no se probó aquí |
-| Micrófono en el panel | Permitido solo para `127.0.0.1:8765`; requiere republicar `JarvisLocal.exe` |
+| Micrófono en el panel | Permitido solo para el servidor de OpenJarvis en loopback (nunca para el centro de control); requiere republicar `JarvisLocal.exe` |
 | Dashboard, logs, telemetría, energía (NVIDIA) | Interfaz verificada; energía NVIDIA no medida aquí |
 | Interfaz completa dentro de Mark | Verificada en Chromium: con Ollama real (chat) y con Ollama simulado (las 14 pestañas); WebView2 no probado |
 | Conector Markdown/Obsidian | Verificado: conectar, sincronizar y recuperar el contenido desde `knowledge.db` |

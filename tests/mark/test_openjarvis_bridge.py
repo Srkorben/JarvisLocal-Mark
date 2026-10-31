@@ -83,7 +83,7 @@ class OpenJarvisBridgeTests(unittest.TestCase):
             config["security"]["allowed_dirs"],
             [str(root) for root in settings.allowed_roots],
         )
-        self.assertEqual(config["server"], {"host": "127.0.0.1", "port": 8765})
+        self.assertEqual(config["server"], {"host": "127.0.0.1", "port": 8790})
         self.assertEqual(config["analytics"]["enabled"], False)
         self.assertEqual(config["intelligence"]["default_model"], "qwen3:8b")
         self.assertEqual(config["engine"]["default"], "ollama")

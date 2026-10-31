@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import IO, Callable
 
 from .catalog import ToolSpec
 
@@ -45,6 +45,7 @@ class ProcessRecord:
     process: subprocess.Popen[bytes]
     started_at: str
     last_error: str | None = None
+    log_handle: IO[bytes] | None = None
 
 
 class ProcessManager:
@@ -57,11 +58,18 @@ class ProcessManager:
         popen_factory: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
         process_terminator: Callable[[subprocess.Popen[bytes]], None] | None = None,
         cooldown_seconds: float = 2.0,
+        log_directory: Path | None = None,
+        prestart: dict[str, Callable[[], None]] | None = None,
     ) -> None:
         self.catalog = dict(catalog)
         self._popen = popen_factory
         self._process_terminator = process_terminator
         self._cooldown_seconds = cooldown_seconds
+        # Los procesos ocultos escriben aquí su salida: sin ello, un fallo al
+        # arrancar (p. ej. "No inference engine available") se perdía.
+        self._log_directory = log_directory
+        # Pasos previos fijos por herramienta (p. ej. asegurar Ollama).
+        self._prestart = dict(prestart or {})
         self._records: dict[str, ProcessRecord] = {}
         self._last_launch: dict[str, float] = {}
         self._last_result: dict[str, dict[str, object]] = {}
@@ -85,6 +93,7 @@ class ProcessManager:
             "exit_code": code,
             "finished_at": _now(),
         }
+        self._close_log(record)
         del self._records[tool_id]
         return None
 
@@ -142,6 +151,10 @@ class ProcessManager:
                 }
             now = time.monotonic()
             if now - self._last_launch.get(tool_id, 0.0) < self._cooldown_seconds:
+                last = self._last_result.get(tool_id, {})
+                if last.get("outcome") == "error":
+                    # Se cerró apenas arrancó: decir eso, no "espera un momento".
+                    raise ToolUnavailableError(self.failure_message(tool_id))
                 raise ToolConflictError("La acción acaba de iniciarse; espera un momento.")
             for other_id, other_tool in self.catalog.items():
                 if other_id == tool_id:
@@ -155,6 +168,14 @@ class ProcessManager:
                         f"{tool.name} entra en conflicto con {other_tool.name}, que sigue en ejecución."
                     )
 
+            hook = self._prestart.get(tool_id)
+            if hook is not None:
+                try:
+                    hook()
+                except ControlCenterError:
+                    raise
+                except Exception as exc:
+                    raise ToolUnavailableError(f"No se pudo preparar {tool.name}: {exc}") from exc
             command = [str(tool.target), *tool.arguments]
             creation_flags = 0
             if os.name == "nt" and tool.visible_console:
@@ -163,7 +184,16 @@ class ProcessManager:
                 creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
             extra: dict[str, object] = {}
             if tool.environment:
-                extra["env"] = {**os.environ, **dict(tool.environment)}
+                extra["env"] = {**os.environ, **dict(tool.environment), "PYTHONIOENCODING": "utf-8"}
+            log_handle = None
+            output: object = None
+            if not tool.visible_console:
+                output = subprocess.DEVNULL
+                log_path = self.log_path(tool_id)
+                if log_path is not None:
+                    log_path.parent.mkdir(parents=True, exist_ok=True)
+                    log_handle = log_path.open("wb")
+                    output = log_handle
             try:
                 process = self._popen(
                     command,
@@ -172,11 +202,13 @@ class ProcessManager:
                     creationflags=creation_flags,
                     close_fds=True,
                     stdin=subprocess.DEVNULL if not tool.visible_console else None,
-                    stdout=subprocess.DEVNULL if not tool.visible_console else None,
-                    stderr=subprocess.DEVNULL if not tool.visible_console else None,
+                    stdout=output,
+                    stderr=subprocess.STDOUT if log_handle is not None else output,
                     **extra,
                 )
             except Exception as exc:
+                if log_handle is not None:
+                    log_handle.close()
                 self._last_result[tool_id] = {
                     "outcome": "error",
                     "message": str(exc),
@@ -184,7 +216,9 @@ class ProcessManager:
                 }
                 raise ToolUnavailableError(f"No se pudo iniciar {tool.name}: {exc}") from exc
             started_at = _now()
-            self._records[tool_id] = ProcessRecord(process=process, started_at=started_at)
+            self._records[tool_id] = ProcessRecord(
+                process=process, started_at=started_at, log_handle=log_handle
+            )
             self._last_launch[tool_id] = now
             self._last_result[tool_id] = {
                 "outcome": "started",
@@ -212,6 +246,7 @@ class ProcessManager:
                 else:
                     _terminate_process_tree(record.process)
             finally:
+                self._close_log(record)
                 self._records.pop(tool_id, None)
             result = {"outcome": "stopped", "tool_id": tool_id, "pid": pid, "finished_at": _now()}
             self._last_result[tool_id] = result
@@ -237,7 +272,54 @@ class ProcessManager:
                     else:
                         _terminate_process_tree(record.process)
                 finally:
+                    self._close_log(record)
                     self._records.pop(tool_id, None)
+
+    def is_running(self, tool_id: str) -> bool:
+        with self._lock:
+            return self._active_record(tool_id) is not None
+
+    def last_result(self, tool_id: str) -> dict[str, object]:
+        with self._lock:
+            self._active_record(tool_id)
+            return dict(self._last_result.get(tool_id, {}))
+
+    def log_path(self, tool_id: str) -> Path | None:
+        if self._log_directory is None:
+            return None
+        return self._log_directory / f"{tool_id}.log"
+
+    def log_tail(self, tool_id: str, lines: int = 6) -> list[str]:
+        path = self.log_path(tool_id)
+        if path is None or not path.is_file():
+            return []
+        try:
+            text = path.read_bytes()[-16384:].decode("utf-8", errors="replace")
+        except OSError:
+            return []
+        return [line.rstrip() for line in text.splitlines() if line.strip()][-lines:]
+
+    def failure_message(self, tool_id: str) -> str:
+        tool = self._tool(tool_id)
+        last = self._last_result.get(tool_id, {})
+        code = last.get("exit_code")
+        message = f"{tool.name} se cerró al iniciar" + (f" (código {code})" if code is not None else "")
+        tail = self.log_tail(tool_id, lines=2)
+        if tail:
+            message += ": " + " ".join(tail)
+        log_path = self.log_path(tool_id)
+        if log_path is not None:
+            message += f". Registro: {log_path}"
+        return message
+
+    @staticmethod
+    def _close_log(record: ProcessRecord) -> None:
+        if record.log_handle is not None:
+            try:
+                record.log_handle.close()
+            except OSError:
+                pass
+            record.log_handle = None
 
 
 def _now() -> str:
@@ -253,7 +335,17 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
             timeout=10,
         )
         if completed.returncode != 0 and process.poll() is None:
-            process.terminate()
+            # Un proceso sin ventana (CREATE_NO_WINDOW) solo se cierra con /F.
+            # terminate() mataría solo al padre: el lanzador de la .venv deja
+            # vivo al intérprete hijo, que seguía ocupando el puerto.
+            subprocess.run(
+                ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+                timeout=10,
+            )
+            if process.poll() is None:
+                process.terminate()
     else:
         process.terminate()
     try:

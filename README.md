@@ -21,7 +21,7 @@ Detalle, matriz de capacidades y verificaciones: [docs/mark/openjarvis-integraci
 - **Capacidades de Mark.** El botón del encabezado abre, dentro de la misma
   ventana, la interfaz de OpenJarvis: agentes, Deep Research, skills, memoria,
   conectores, automatizaciones, dashboard, logs y ajustes. Se sirve solo en
-  `127.0.0.1:8765`, sin login, con hogar propio en `data\openjarvis`.
+  `127.0.0.1` (puerto propio desde 8790), sin login, con hogar propio en `data\openjarvis`.
 - **La política de Mark manda.** Los agentes de OpenJarvis heredan las
   restricciones de Mark: leen solo en `allowed_roots` y no escriben, no ejecutan
   código, no salen a la red ni envían por canales salvo que `config/jarvis.toml`

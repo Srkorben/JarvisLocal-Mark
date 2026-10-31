@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # Interfaz completa de OpenJarvis, servida solo en loopback y mostrada dentro
-# de la ventana de Mark (iframe). Puerto fijo para que el CSP del panel lo
-# pueda nombrar explícitamente.
-OPENJARVIS_PORT = 8765
+# de la ventana de Mark (iframe). Puerto preferido, FUERA del rango del propio
+# centro de control (8765-8774): compartirlo hacía que OpenJarvis no pudiera
+# abrir su puerto y que el panel mostrara la página de Mark, bloqueada.
+# El centro de control elige otro libre si está ocupado y lo nombra en su CSP.
+OPENJARVIS_PORT = 8790
 OPENJARVIS_ORIGIN = f"http://127.0.0.1:{OPENJARVIS_PORT}"
 
 
@@ -57,6 +59,7 @@ def build_tool_catalog(
     openjarvis_engine: str = "",
     openjarvis_model: str = "",
     openjarvis_environment: tuple[tuple[str, str], ...] = (),
+    openjarvis_port: int = OPENJARVIS_PORT,
 ) -> dict[str, ToolSpec]:
     """Construye el catálogo cerrado que sustituye los nueve accesos originales.
 
@@ -185,7 +188,7 @@ def build_tool_catalog(
         "--host",
         "127.0.0.1",
         "--port",
-        str(OPENJARVIS_PORT),
+        str(openjarvis_port),
     ]
     if openjarvis_engine:
         openjarvis_arguments += ["--engine", openjarvis_engine]

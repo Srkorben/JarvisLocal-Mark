@@ -20,7 +20,7 @@ from typing import Any
 
 from .config import Settings
 
-OPENJARVIS_PORT = 8765
+OPENJARVIS_PORT = 8790  # igual que control_center.catalog.OPENJARVIS_PORT
 POLICY_FILE = "capabilities.json"
 CONFIG_FILE = "config.toml"
 
@@ -91,9 +91,11 @@ def capability_policy(settings: Settings) -> dict[str, Any]:
     }
 
 
-def _managed_config(settings: Settings, home: Path) -> dict[str, dict[str, Any]]:
+def _managed_config(
+    settings: Settings, home: Path, port: int = OPENJARVIS_PORT
+) -> dict[str, dict[str, Any]]:
     managed: dict[str, dict[str, Any]] = {
-        "server": {"host": "127.0.0.1", "port": OPENJARVIS_PORT},
+        "server": {"host": "127.0.0.1", "port": port},
         "analytics": {"enabled": False, "choice_recorded": True},
         "speech": {
             "language": settings.language,
@@ -134,7 +136,7 @@ def _merge(document: Any, values: dict[str, Any]) -> None:
             document[key] = value
 
 
-def prepare_openjarvis_home(settings: Settings) -> Path:
+def prepare_openjarvis_home(settings: Settings, port: int = OPENJARVIS_PORT) -> Path:
     """Crea o actualiza el hogar de OpenJarvis de Mark y devuelve su ruta."""
 
     import tomlkit
@@ -154,7 +156,7 @@ def prepare_openjarvis_home(settings: Settings) -> Path:
             "OpenJarvis dentro de Mark. Puedes editar este archivo; Mark vuelve a "
             "fijar [security], [server], [analytics] y la voz en cada arranque."
         ))
-    _merge(document, _managed_config(settings, home))
+    _merge(document, _managed_config(settings, home, port))
     config_path.write_text(tomlkit.dumps(document), encoding="utf-8")
     return home
 

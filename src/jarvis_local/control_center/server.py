@@ -58,8 +58,10 @@ class ControlCenterHTTPServer(ThreadingHTTPServer):
         module_snapshot: Callable[[], dict[str, Any]] | None = None,
         voice_importer: Callable[..., dict[str, object]] | None = None,
         version: str = "local",
+        openjarvis_origin: str = OPENJARVIS_ORIGIN,
     ) -> None:
         self.manager = manager
+        self.openjarvis_origin = openjarvis_origin
         self.auth_token = auth_token
         self.csrf_token = csrf_token
         self.icon_path = icon_path
@@ -134,6 +136,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
                 csrf_token=self.server.csrf_token,
                 nonce=nonce,
                 version=self.server.version,
+                openjarvis_origin=self.server.openjarvis_origin,
             ).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self._security_headers(nonce=nonce)
@@ -165,7 +168,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"tools": tools})
             return
         if parsed.path == "/api/openjarvis/ready":
-            self._json(HTTPStatus.OK, {"ready": _openjarvis_ready(), "origin": OPENJARVIS_ORIGIN})
+            self._json(HTTPStatus.OK, self._openjarvis_state())
             return
         if parsed.path == "/api/system":
             if self.server.system_monitor is None:
@@ -470,6 +473,28 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             return
         self._json(HTTPStatus.OK, {"result": result})
 
+    def _openjarvis_state(self) -> dict[str, object]:
+        """Estado del panel de capacidades, con la causa si no puede mostrarse."""
+
+        origin = self.server.openjarvis_origin
+        state = dict(_openjarvis_diagnose(origin))
+        state["origin"] = origin
+        manager = self.server.manager
+        if "openjarvis" in manager.catalog:
+            running = manager.is_running("openjarvis")
+            state["running"] = running
+            last = manager.last_result("openjarvis")
+            if not running and last.get("outcome") == "error":
+                state["ready"] = False
+                state["detail"] = manager.failure_message("openjarvis")
+            elif not running and state.get("reachable"):
+                # Responde algo que Mark no inició: otra instancia en el puerto.
+                state["ready"] = False
+                state["detail"] = state.get("detail") or (
+                    f"Otro programa responde en {origin}. Cierra esa instancia o reinicia Mark."
+                )
+        return state
+
     def _tool_running(self, tool_id: str) -> bool:
         return any(
             item["id"] == tool_id and item["status"] == "running"
@@ -541,7 +566,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
             "Content-Security-Policy",
             f"default-src 'none'; script-src {script}; style-src {style}; "
             "connect-src 'self'; img-src 'self' data:; "
-            f"frame-src {OPENJARVIS_ORIGIN}; "
+            f"frame-src {self.server.openjarvis_origin}; "
             "frame-ancestors 'none'; base-uri 'none'; form-action 'none'",
         )
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -575,14 +600,7 @@ class ControlCenterRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
-def _openjarvis_ready(timeout: float = 1.0) -> bool:
-    """Comprueba en loopback si el servidor de OpenJarvis ya atiende."""
+def _openjarvis_diagnose(origin: str) -> dict[str, object]:
+    from .openjarvis_service import diagnose
 
-    from urllib.error import URLError
-    from urllib.request import Request, urlopen
-
-    try:
-        with urlopen(Request(f"{OPENJARVIS_ORIGIN}/health"), timeout=timeout) as response:
-            return response.status == 200
-    except (URLError, OSError, ValueError):
-        return False
+    return diagnose(origin)

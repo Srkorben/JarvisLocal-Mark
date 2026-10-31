@@ -13,8 +13,6 @@ namespace JarvisLocal.Desktop;
 public partial class MainWindow : Window
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(3) };
-    // Debe coincidir con OPENJARVIS_PORT de jarvis_local.control_center.catalog.
-    private const int OpenJarvisPort = 8765;
     private string? _token;
     private int _port;
     private bool _closing;
@@ -87,19 +85,20 @@ public partial class MainWindow : Window
         };
         Web.CoreWebView2.NewWindowRequested += (_, args) => args.Handled = true;
         // Todo permiso web se niega, salvo el micrófono para la interfaz de
-        // OpenJarvis incrustada en el panel (solo su origen loopback fijo).
+        // OpenJarvis incrustada en el panel: loopback, en un puerto distinto
+        // del centro de control (el CSP del panel solo admite ese servidor).
         Web.CoreWebView2.PermissionRequested += (_, args) =>
-            args.State = IsOpenJarvisMicrophone(args.PermissionKind, args.Uri)
+            args.State = IsOpenJarvisMicrophone(args.PermissionKind, args.Uri, _port)
                 ? CoreWebView2PermissionState.Allow
                 : CoreWebView2PermissionState.Deny;
     }
 
-    internal static bool IsOpenJarvisMicrophone(CoreWebView2PermissionKind kind, string uri) =>
+    internal static bool IsOpenJarvisMicrophone(CoreWebView2PermissionKind kind, string uri, int controlCenterPort) =>
         kind == CoreWebView2PermissionKind.Microphone &&
         Uri.TryCreate(uri, UriKind.Absolute, out var origin) &&
         origin.Scheme == Uri.UriSchemeHttp &&
         origin.Host == "127.0.0.1" &&
-        origin.Port == OpenJarvisPort;
+        origin.Port != controlCenterPort;
 
     private static async Task EnsureControlCenterAsync(string root)
     {

@@ -22,6 +22,9 @@ from ..process_lock import windows_singleton
 from ..projects import ProjectService
 from ..openjarvis_bridge import openjarvis_environment, prepare_openjarvis_home
 from .catalog import build_tool_catalog
+from .openjarvis_service import choose_port as choose_openjarvis_port
+from .openjarvis_service import origin_for as openjarvis_origin_for
+from .runtime import ToolUnavailableError
 from .modules import build_module_snapshot
 from .runtime import ProcessManager
 from .server import ControlCenterHTTPServer
@@ -117,8 +120,11 @@ def serve() -> int:
         csrf_token = secrets.token_urlsafe(32)
         settings = Settings.load(root / "config" / "jarvis.toml")
         tts_provider, _ = settings.effective_tts
+        openjarvis_port = choose_openjarvis_port(root)
         try:
-            openjarvis_env = openjarvis_environment(settings, prepare_openjarvis_home(settings))
+            openjarvis_env = openjarvis_environment(
+                settings, prepare_openjarvis_home(settings, openjarvis_port)
+            )
         except Exception:
             # OpenJarvis es un upgrade: si su hogar no se puede preparar, el
             # resto de Mark sigue funcionando y el panel queda sin política.
@@ -134,8 +140,17 @@ def serve() -> int:
             openjarvis_engine=settings.openjarvis_engine,
             openjarvis_model=settings.model if settings.model_provider == "openjarvis" else "",
             openjarvis_environment=openjarvis_env,
+            openjarvis_port=openjarvis_port,
         )
-        manager = ProcessManager(catalog)
+        prestart = {}
+        if settings.model_provider == "openjarvis" and settings.openjarvis_engine in ("", "ollama"):
+            # jarvis serve se cierra si no hay motor: Ollama primero.
+            prestart["openjarvis"] = _ensure_ollama_for_openjarvis
+        manager = ProcessManager(
+            catalog,
+            log_directory=settings.data_dir / "logs" / "tools",
+            prestart=prestart,
+        )
         system_monitor = SystemStatusMonitor(settings, manager)
         text_chat = TextChatRequestStore()
         voice_control = VoiceControlStore()
@@ -163,6 +178,7 @@ def serve() -> int:
             text_chat=text_chat,
             voice_control=voice_control,
             system_monitor=system_monitor,
+            openjarvis_origin=openjarvis_origin_for(openjarvis_port),
         )
         endpoint = {
             "pid": os.getpid(),
@@ -206,6 +222,15 @@ def stop() -> bool:
         return False
 
 
+def _ensure_ollama_for_openjarvis() -> None:
+    from ..model_providers.ollama_launcher import ensure_ollama
+
+    if not ensure_ollama(None):
+        raise ToolUnavailableError(
+            "Ollama no responde. Ábrelo (o instálalo desde https://ollama.com) y vuelve a intentarlo."
+        )
+
+
 def _bind_available_server(
     manager: ProcessManager,
     auth_token: str,
@@ -216,6 +241,7 @@ def _bind_available_server(
     text_chat: TextChatRequestStore | None = None,
     voice_control: VoiceControlStore | None = None,
     system_monitor: SystemStatusMonitor | None = None,
+    openjarvis_origin: str | None = None,
 ) -> ControlCenterHTTPServer:
     project = root or project_root()
     last_error: OSError | None = None
@@ -233,6 +259,7 @@ def _bind_available_server(
                 voice_control=voice_control,
                 system_monitor=system_monitor,
                 version="Mark Scout · Desktop Alpha",
+                **({"openjarvis_origin": openjarvis_origin} if openjarvis_origin else {}),
             )
         except OSError as exc:
             last_error = exc
